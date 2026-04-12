@@ -16,13 +16,15 @@ static void sDrawGradient(NSRect rect, NSColor *color, NSLayoutAttribute attribu
     CGPoint endPoint   = CGPointZero;
     
     if (attribute == NSLayoutAttributeRight) {
-        startPoint = CGPointMake(CGRectGetMaxX(rect), 0);
+        startPoint = CGPointMake(CGRectGetMaxX(rect),   0);
         endPoint   = CGPointMake(startPoint.x - length, 0);
 
     } else {
-        startPoint = CGPointMake(CGRectGetMinX(rect), 0);
+        startPoint = CGPointMake(CGRectGetMinX(rect),   0);
         endPoint   = CGPointMake(startPoint.x + length, 0);
     }
+    
+    NSRectClip(rect);
 
     [[[NSGradient alloc] initWithColors:@[
         [NSColor clearColor],
