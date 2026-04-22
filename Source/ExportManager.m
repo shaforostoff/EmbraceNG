@@ -113,7 +113,6 @@
 - (void) _selectFormat:(id)sender
 {
     NSInteger index = [sender indexOfSelectedItem];
-    NSString *name  = [_savePanel nameFieldStringValue];
     NSString *extension;
 
     if (index == 2) {
@@ -129,10 +128,29 @@
         _format = ExportManagerFormatPlainText;
     }
 
-    name = [name stringByDeletingPathExtension];
-    name = [name stringByAppendingPathExtension:extension];
+    NSString *originalName = [_savePanel nameFieldStringValue];
+    NSString *originalExtension = [[originalName pathExtension] lowercaseString];
 
-    [_savePanel setNameFieldStringValue:name];
+    NSString *updatedName = originalName;
+    
+    BOOL isOriginalExtensionKnown = (
+        [originalExtension isEqualToString:@"txt"] ||
+        [originalExtension isEqualToString:@"m3u"] ||
+        [originalExtension isEqualToString:@"m3u8"]
+    );
+
+    if (isOriginalExtensionKnown && ![originalExtension isEqualToString:extension]) {
+        updatedName = [originalName stringByDeletingPathExtension];
+        updatedName = [updatedName stringByAppendingPathExtension:extension];
+    }
+
+    if (!updatedName) updatedName = originalName;
+
+    // At this point, updatedName should definitely not be nil.
+    // If it is, regenerate using -suggestedNameWithTracks:
+    if (!updatedName) updatedName = [self suggestedNameWithTracks:nil];
+
+    [_savePanel setNameFieldStringValue:updatedName];
     [_savePanel setAllowedFileTypes:@[ extension ]];
     
     [[NSUserDefaults standardUserDefaults] setInteger:index forKey:@"export-index"];
