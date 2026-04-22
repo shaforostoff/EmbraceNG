@@ -15,16 +15,14 @@
     CGFloat onePixel = scale > 1 ? 0.5 : 1;
     CGRect  rect     = GetInsetBounds(self);
 
+    rect.origin.y =  (_layoutAttribute == NSLayoutAttributeTop) ?
+        rect.size.height - onePixel :
+        0;
+
+    rect.size.height = onePixel;
+
     [_borderColor set];
-
-    if (_layoutAttribute == NSLayoutAttributeTop) {
-        rect.origin.y = rect.size.height - onePixel;
-        NSRectFill(rect);
-
-    } else if (_layoutAttribute == NSLayoutAttributeBottom) {
-        rect.origin.y = 0;
-        NSRectFill(rect);
-    }
+    NSRectFill(rect);
 }
 
 
