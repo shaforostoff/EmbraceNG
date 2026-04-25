@@ -186,8 +186,6 @@ static double sMaxVolume = 1.0 - (2.0 / 32767.0);
 {
     HugPlaybackStatus playbackStatus = [_engine playbackStatus];
     
-    _timeElapsed      = [_engine timeElapsed];
-    _timeRemaining    = [_engine timeRemaining];
     _leftMeterData    = [_engine leftMeterData];
     _rightMeterData   = [_engine rightMeterData];
     _dangerPeak       = [_engine dangerLevel];
@@ -196,25 +194,51 @@ static double sMaxVolume = 1.0 - (2.0 / 32767.0);
     BOOL done = NO;
     TrackStatus status = TrackStatusPlaying;
 
-    NSTimeInterval roundedTimeElapsed   = floor(_timeElapsed);
-    NSTimeInterval roundedTimeRemaining = round(_timeRemaining);
-
     if (playbackStatus == HugPlaybackStatusFinished) {
         done = YES;
 
-        _timeElapsed = [_currentTrack playDuration];
-        _timeRemaining = 0;
-
-        roundedTimeElapsed = round([_currentTrack playDuration]);
-        roundedTimeRemaining = 0;
-
         status = TrackStatusPlayed;
+
+        _timeElapsed   = [_currentTrack playDuration];
+        _timeRemaining = 0;
 
     } else if (playbackStatus == HugPlaybackStatusPreparing) {
         status = TrackStatusPreparing;
 
+        _timeElapsed   = -_currentPadding;
+        _timeRemaining = [_currentTrack playDuration];
+
     } else {
         status = TrackStatusPlaying;
+
+        _timeElapsed   = [_engine timeElapsed];
+        _timeRemaining = [_engine timeRemaining];
+    }
+
+    double percentage = 0;
+
+    NSTimeInterval roundedTimeElapsed;
+    NSTimeInterval roundedTimeRemaining;
+
+    // When timeElapsed is negative, we are either Preparing or Waiting with a padding.
+    // timeRemaining will be the track duration. Hence, our duration math doesn't work.
+    //
+    if (_timeElapsed < 0) {
+        roundedTimeElapsed   = floor(_timeElapsed);
+        roundedTimeRemaining = round(_timeRemaining);
+    
+    } else {
+        NSTimeInterval duration = _timeElapsed + _timeRemaining;
+        NSTimeInterval roundedDuration = round(duration);
+
+        NSTimeInterval timeMultiplier = duration > 0 ? (roundedDuration / duration) : 0;
+
+        roundedTimeElapsed   = floor(_timeElapsed * timeMultiplier);
+        roundedTimeRemaining = roundedDuration - roundedTimeElapsed;
+
+        if (duration > 0) {
+            percentage = _timeElapsed / duration;
+        }
     }
 
     if (!_timeElapsedString || (roundedTimeElapsed != _roundedTimeElapsed)) {
@@ -230,14 +254,6 @@ static double sMaxVolume = 1.0 - (2.0 / 32767.0);
     // Waiting for analysis
     if (![_currentTrack didAnalyzeLoudness]) {
         [self setTimeElapsedString:nil];
-    }
-
-    NSTimeInterval duration = _timeElapsed + _timeRemaining;
-    if (!duration) duration = 1;
-    
-    double percentage = 0;
-    if (_timeElapsed > 0) {
-        percentage = _timeElapsed / duration;
     }
 
     [self setPercentage:percentage];

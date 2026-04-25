@@ -529,6 +529,10 @@ NSString *GetStringForTime(NSTimeInterval time)
 {
     BOOL minus = NO;
 
+    if (time == -0) {
+        time = 0;
+    }
+
     if (time < 0) {
         time = -time;
         minus = YES;
