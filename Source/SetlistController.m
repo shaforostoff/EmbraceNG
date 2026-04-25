@@ -1,4 +1,4 @@
-// (c) 2014-2024 Ricci Adams
+// (c) 2014-2026 Ricci Adams
 // MIT License (or) 1-clause BSD License
 
 #import "SetlistController.h"
@@ -15,6 +15,7 @@
 #import "TrackTableCellView.h"
 #import "WaveformView.h"
 #import "HairlineView.h"
+#import "InnerShadowView.h"
 #import "EmbraceWindow.h"
 #import "MenuLabelView.h"
 #import "NoDropImageView.h"
@@ -63,6 +64,8 @@ static NSInteger sAutoGapMaximum = 16;
 @property (nonatomic, weak)   IBOutlet SetlistPlayBar    *playBar;
 @property (nonatomic, weak)   IBOutlet SetlistSlider     *volumeSlider;
 
+@property (nonatomic, weak)   IBOutlet InnerShadowView *topInnerShadowView;
+@property (nonatomic, weak)   IBOutlet InnerShadowView *bottomInnerShadowView;
 @property (nonatomic, weak)   IBOutlet NSScrollView    *scrollView;
 @property (nonatomic, weak)   IBOutlet NSView          *footerView;
 @property (nonatomic, weak)   IBOutlet HairlineView    *bottomSeparator;
@@ -150,6 +153,9 @@ static NSInteger sAutoGapMaximum = 16;
         
         [contentView addSubview:effectView positioned:NSWindowBelow relativeTo:nil];
     }
+
+    [[self topInnerShadowView] setLayoutAttribute:NSLayoutAttributeTop];
+    [[self bottomInnerShadowView] setLayoutAttribute:NSLayoutAttributeBottom];
 
     // Match PlayBar inactive color (used for top separator)
     [[self bottomSeparator] setBorderColor:[NSColor colorNamed:@"SetlistSeparator"]];

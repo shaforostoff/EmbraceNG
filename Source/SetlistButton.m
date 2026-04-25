@@ -1,4 +1,4 @@
-// (c) 2014-2024 Ricci Adams
+// (c) 2014-2026 Ricci Adams
 // MIT License (or) 1-clause BSD License
 
 #import "SetlistButton.h"
@@ -41,6 +41,9 @@ typedef NS_ENUM(NSInteger, SetlistButtonStyle) {
     BOOL                     _highlighted;
     SetlistButtonIconView   *_iconView;
     SetlistButtonBorderView *_borderView;
+    
+    NSImageView       *_backgroundView;
+    SetlistButtonStyle _backgroundStyle;
 }
 
 
@@ -71,7 +74,12 @@ typedef NS_ENUM(NSInteger, SetlistButtonStyle) {
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_update:) name:NSApplicationDidResignActiveNotification object:nil];
     
     CGRect bounds = [self bounds];
-    
+
+    _backgroundView = [[NoDropImageView alloc] initWithFrame:[self bounds]];
+    [self addSubview:_backgroundView];
+
+    [_backgroundView setImageScaling:NSImageScaleNone];
+
     _iconView = [[SetlistButtonIconView alloc] initWithFrame:bounds];
     [self addSubview:_iconView];
 
@@ -135,6 +143,7 @@ typedef NS_ENUM(NSInteger, SetlistButtonStyle) {
 - (void) _update:(NSNotification *)note
 {
     SetlistButtonStyle style = SetlistButtonStyleNormal;
+    SetlistButtonStyle backgroundStyle = SetlistButtonStyleNormal;
 
     SetlistButtonIcon icon = _icon;
     BOOL isInactive = ![[self window] isMainWindow] || ![NSApp isActive];
@@ -153,11 +162,25 @@ typedef NS_ENUM(NSInteger, SetlistButtonStyle) {
     }
     
     if (isInactive) {
-        style = SetlistButtonStyleInactive;
+        backgroundStyle = SetlistButtonStyleInactive;
+    } else if (_highlighted) {
+        backgroundStyle = SetlistButtonStylePressed;
     }
 
     [_iconView setIcon:[self icon]];
     [_iconView setStyle:style];
+    
+    if (_backgroundStyle != backgroundStyle) {
+        if (backgroundStyle == SetlistButtonStyleInactive) {
+            [_backgroundView setImage:[NSImage imageNamed:@"SetlistButtonInactive"]];
+        } else if (backgroundStyle == SetlistButtonStylePressed) {
+            [_backgroundView setImage:[NSImage imageNamed:@"SetlistButtonPressed"]];
+        } else {
+            [_backgroundView setImage:[NSImage imageNamed:@"SetlistButtonNormal"]];
+        }
+        
+        _backgroundStyle = backgroundStyle;
+    }
 }
 
 
@@ -176,7 +199,8 @@ typedef NS_ENUM(NSInteger, SetlistButtonStyle) {
 {
     if (outlined != _outlined) {
         if (outlined && !_borderView) {
-            _borderView = [[SetlistButtonBorderView alloc] initWithFrame:[self bounds]];
+            CGRect borderFrame = CGRectInset([self bounds], 0, 2);
+            _borderView = [[SetlistButtonBorderView alloc] initWithFrame:borderFrame];
             [self addSubview:_borderView];
         }
     
@@ -456,21 +480,8 @@ typedef NS_ENUM(NSInteger, SetlistButtonStyle) {
 
 
 
-- (void) mouseEntered:(NSEvent *)event
-{
-    [self _updateBackgroundLayer];
-}
-
-
-- (void) mouseExited:(NSEvent *)event
-{
-    [self _updateBackgroundLayer];
-}
-
-
 - (void) viewDidChangeEffectiveAppearance
 {
-    [self _updateBackgroundLayer];
     [_mainLayer setNeedsDisplay];
 }
 
@@ -480,9 +491,7 @@ typedef NS_ENUM(NSInteger, SetlistButtonStyle) {
     [super layout];
     
     NSRect bounds = [self bounds];
-    
-    [_backgroundLayer setFrame:bounds];
-    
+   
     NSRect mainFrame = bounds;
     NSRect auxFrame  = bounds;
 
@@ -532,40 +541,9 @@ typedef NS_ENUM(NSInteger, SetlistButtonStyle) {
     CGFloat scale = [window backingScaleFactor];
     
     if (scale) {
-        [_backgroundLayer setContentsScale:scale];
         [_mainLayer setContentsScale:scale];
         [_auxLayer  setContentsScale:scale];
     }
-}
-
-
-- (void) _updateBackgroundLayer
-{
-    NSColor *color = nil;
-    BOOL mouseInside = NO;
-
-    NSWindow *window = [self window];
-    if ([window isMainWindow]) {
-        NSPoint mouseLocation = [window mouseLocationOutsideOfEventStream];
-        mouseLocation = [self convertPoint:mouseLocation fromView:nil];
-        mouseInside = [self mouse:mouseLocation inRect:[self bounds]];
-    }
-
-    if (_style == SetlistButtonStylePressed) {
-        color = [NSColor colorNamed:@"ButtonBackgroundPressed"];
-    } else if (mouseInside && (_style != SetlistButtonStyleDisabled)) {
-        color = [NSColor colorNamed:@"ButtonBackgroundHover"];
-    }
-
-    PerformWithAppearance([self effectiveAppearance], ^{
-        if (color) {
-            [_backgroundLayer setBackgroundColor:[color CGColor]];
-            [_backgroundLayer setHidden:NO];
-        } else {
-            [_backgroundLayer setBackgroundColor:nil];
-            [_backgroundLayer setHidden:YES];
-        }
-    });
 }
 
 
@@ -811,7 +789,6 @@ typedef NS_ENUM(NSInteger, SetlistButtonStyle) {
         _icon = icon;
         [self setNeedsLayout:YES];
 
-        [self _updateBackgroundLayer];
         [_mainLayer setNeedsDisplay];
     }
 }
@@ -823,7 +800,6 @@ typedef NS_ENUM(NSInteger, SetlistButtonStyle) {
         _style = style;
         [self setNeedsLayout:YES];
 
-        [self _updateBackgroundLayer];
         [_mainLayer setNeedsDisplay];
     }
 }

@@ -89,6 +89,7 @@
 		557C2BFB1895F325002FAFEA /* CenteredTextField.m in Sources */ = {isa = PBXBuildFile; fileRef = 557C2BFA1895F325002FAFEA /* CenteredTextField.m */; };
 		557C439A1D615CDC000184D8 /* TipArrowFloater.m in Sources */ = {isa = PBXBuildFile; fileRef = 557C43991D615CDC000184D8 /* TipArrowFloater.m */; };
 		557CF69118C1E14B0066D040 /* TracksController.m in Sources */ = {isa = PBXBuildFile; fileRef = 557CF69018C1E14B0066D040 /* TracksController.m */; };
+		5581437C2F994F9200CB4DCD /* InnerShadowView.m in Sources */ = {isa = PBXBuildFile; fileRef = 5581437B2F994F9200CB4DCD /* InnerShadowView.m */; };
 		558513C718794A2600C268E3 /* EffectsController.m in Sources */ = {isa = PBXBuildFile; fileRef = 558513C618794A2600C268E3 /* EffectsController.m */; };
 		558DC083187785BC00C85770 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 558DC082187785BC00C85770 /* Cocoa.framework */; };
 		558DC0BA187785F200C85770 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 558DC0B7187785F200C85770 /* AppDelegate.m */; };
@@ -338,6 +339,8 @@
 		557C43991D615CDC000184D8 /* TipArrowFloater.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = TipArrowFloater.m; path = Source/TipArrowFloater.m; sourceTree = SOURCE_ROOT; };
 		557CF68F18C1E14B0066D040 /* TracksController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = TracksController.h; path = Source/TracksController.h; sourceTree = SOURCE_ROOT; };
 		557CF69018C1E14B0066D040 /* TracksController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = TracksController.m; path = Source/TracksController.m; sourceTree = SOURCE_ROOT; };
+		5581437A2F994F9200CB4DCD /* InnerShadowView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = InnerShadowView.h; path = Source/InnerShadowView.h; sourceTree = "<group>"; };
+		5581437B2F994F9200CB4DCD /* InnerShadowView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = InnerShadowView.m; path = Source/InnerShadowView.m; sourceTree = "<group>"; };
 		5582F7EC18A385570046A24B /* LoudnessMeasurer.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = LoudnessMeasurer.m; path = Source/LoudnessMeasurer.m; sourceTree = "<group>"; };
 		5582F7ED18A385570046A24B /* LoudnessMeasurer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = LoudnessMeasurer.h; path = Source/LoudnessMeasurer.h; sourceTree = "<group>"; };
 		558513C518794A2600C268E3 /* EffectsController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = EffectsController.h; path = Source/EffectsController.h; sourceTree = SOURCE_ROOT; };
@@ -859,6 +862,8 @@
 				55698DA71B54ECBE00C9E200 /* GraphicEQView.m */,
 				55D7000A20DC9F3B002FB978 /* HairlineView.h */,
 				55D7000920DC9F3A002FB978 /* HairlineView.m */,
+				5581437A2F994F9200CB4DCD /* InnerShadowView.h */,
+				5581437B2F994F9200CB4DCD /* InnerShadowView.m */,
 				556098121B47CABD008516C3 /* MenuLabelView.h */,
 				556098131B47CABD008516C3 /* MenuLabelView.m */,
 				55717BF3187EA65400213213 /* SetlistButton.h */,
@@ -1200,6 +1205,7 @@
 				55BC0B2B1878E4EF00D84481 /* Utils.m in Sources */,
 				557CF69118C1E14B0066D040 /* TracksController.m in Sources */,
 				5559540121C0C1FC0032EE54 /* HugCrashPad.m in Sources */,
+				5581437C2F994F9200CB4DCD /* InnerShadowView.m in Sources */,
 				556ACE36187BB43A00AED4BC /* WrappedUtils.cpp in Sources */,
 				557C439A1D615CDC000184D8 /* TipArrowFloater.m in Sources */,
 				555953F521B8B6FB0032EE54 /* HugAudioSource.m in Sources */,
