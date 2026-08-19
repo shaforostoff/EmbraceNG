@@ -9,6 +9,7 @@
 
 #import "EditGraphicEQEffectController.h"
 #import "EditSystemEffectController.h"
+#import "RestorationAudioUnit.h"
 #import "CurrentTrackController.h"
 #import "TracksController.h"
 #import "Preferences.h"
@@ -127,6 +128,7 @@
     // Load scripts
     [ScriptsManager sharedInstance];
     
+    EmbraceRegisterRestorationAudioUnits();
     [EffectType embrace_registerMappedEffects];
 
     TelemetrySetBasePath(GetApplicationSupportDirectory());
@@ -314,6 +316,7 @@
 
         if ([effectName isEqualToString:EmbraceMappedEffect10BandEQ] ||
             [effectName isEqualToString:EmbraceMappedEffect31BandEQ] ||
+            [effectName isEqualToString:EmbraceMappedEffectParametricEQ] ||
             [effectName isEqualToString:@"AUGraphicEQ"] ||
             [effectName isEqualToString:@"AUNBandEQ"]
         ) {

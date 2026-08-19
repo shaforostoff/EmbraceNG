@@ -13,7 +13,8 @@
 
 
 typedef NS_ENUM(NSInteger, EffectCategory) {
-    EffectCategoryEqualizers = 1,
+    EffectCategoryRestoration = 1,
+    EffectCategoryEqualizers,
     EffectCategoryFilters,
     EffectCategoryDynamics,
     EffectCategoryOther
@@ -25,8 +26,12 @@ static EffectCategory sGetCategory(NSString *name)
     EffectCategory result = EffectCategoryOther;
 
     NSDictionary *map = @{
+        @"EmbraceDeclick":        @( EffectCategoryRestoration ),
+        @"EmbraceDehum":          @( EffectCategoryRestoration ),
+
         @"EmbraceGraphicEQ10":    @( EffectCategoryEqualizers ),
         @"EmbraceGraphicEQ31":    @( EffectCategoryEqualizers ),
+        @"EmbraceParametricEQ":   @( EffectCategoryEqualizers ),
 
         @"AUBandpass":            @( EffectCategoryFilters ),
         @"AUParametricEQ":        @( EffectCategoryFilters ),

@@ -3,8 +3,34 @@
 
 #import "EffectAdditions.h"
 
-NSString * const EmbraceMappedEffect10BandEQ = @"EmbraceGraphicEQ10";
-NSString * const EmbraceMappedEffect31BandEQ = @"EmbraceGraphicEQ31";
+NSString * const EmbraceMappedEffect10BandEQ     = @"EmbraceGraphicEQ10";
+NSString * const EmbraceMappedEffect31BandEQ     = @"EmbraceGraphicEQ31";
+NSString * const EmbraceMappedEffectParametricEQ = @"EmbraceParametricEQ";
+
+NSString * const EmbraceEffectDeclick = @"EmbraceDeclick";
+NSString * const EmbraceEffectDehum   = @"EmbraceDehum";
+
+
+typedef struct {
+    AUValue type;
+    AUValue frequency;
+    AUValue bandwidth;  // In octaves, ignored by the shelves
+} ParametricEQBand;
+
+
+// Band placement for 78rpm shellac transfers, where the useful range is roughly
+// 100Hz - 8kHz.  The violin band is centred on sqrt(1500 * 6000) = 3000Hz and is
+// log2(6000 / 1500) = 2 octaves wide, so it spans 1500 - 6000Hz.  Every band
+// starts at 0dB -- these are starting positions, not a curve.
+//
+static ParametricEQBand sParametricEQBands[] = {
+    { kAUNBandEQFilterType_LowShelf,    100, 0   },  // Rumble and transfer noise under the cello
+    { kAUNBandEQFilterType_Parametric,  250, 1.0 },  // Cello and double bass
+    { kAUNBandEQFilterType_Parametric,  500, 1.0 },  // Lower mids, bandoneon body
+    { kAUNBandEQFilterType_Parametric, 1000, 1.0 },  // Mids, bandoneon reeds and piano
+    { kAUNBandEQFilterType_Parametric, 3000, 2.0 },  // Violins
+    { kAUNBandEQFilterType_HighShelf,  6000, 0   }   // Above what most shellacs carry
+};
 
 
 @implementation EffectType (EmbraceAdditions)
@@ -28,6 +54,37 @@ NSString * const EmbraceMappedEffect31BandEQ = @"EmbraceGraphicEQ31";
         AUParameter *parameter = [[unit parameterTree] parameterWithID:kGraphicEQParam_NumberOfBands scope:kAudioUnitScope_Global element:0];
         [parameter setValue:1.0];
     }];
+
+    acd.componentSubType = kAudioUnitSubType_NBandEQ;
+
+    [self registerMappedTypeWithName:EmbraceMappedEffectParametricEQ audioComponentDescription:&acd configurator:^(AUAudioUnit *unit) {
+        AUParameterTree *parameterTree = [unit parameterTree];
+
+        void (^setBandParameter)(AudioUnitParameterID, NSInteger, AUValue) =
+            ^(AudioUnitParameterID base, NSInteger band, AUValue value)
+        {
+            AUParameter *parameter = [parameterTree parameterWithID:(base + (AudioUnitParameterID)band) scope:kAudioUnitScope_Global element:0];
+            [parameter setValue:value];
+        };
+
+        NSInteger bandCount = sizeof(sParametricEQBands) / sizeof(sParametricEQBands[0]);
+
+        // AUNBandEQ hands us eight bands, all bypassed.  Anything past our layout
+        // stays that way, ready for the user to switch on.
+        //
+        for (NSInteger i = 0; i < bandCount; i++) {
+            ParametricEQBand band = sParametricEQBands[i];
+
+            setBandParameter(kAUNBandEQParam_BypassBand, i, 0);
+            setBandParameter(kAUNBandEQParam_FilterType, i, band.type);
+            setBandParameter(kAUNBandEQParam_Frequency,  i, band.frequency);
+            setBandParameter(kAUNBandEQParam_Gain,       i, 0);
+
+            if (band.bandwidth) {
+                setBandParameter(kAUNBandEQParam_Bandwidth, i, band.bandwidth);
+            }
+        }
+    }];
 }
 
 
@@ -36,8 +93,12 @@ NSString * const EmbraceMappedEffect31BandEQ = @"EmbraceGraphicEQ31";
     NSString *name = [self name];
 
     NSDictionary *map = @{
-        EmbraceMappedEffect10BandEQ: NSLocalizedString(@"10-band Graphic Equalizer", nil),
-        EmbraceMappedEffect31BandEQ: NSLocalizedString(@"31-band Graphic Equalizer", nil),
+        EmbraceMappedEffect10BandEQ:     NSLocalizedString(@"10-band Graphic Equalizer", nil),
+        EmbraceMappedEffect31BandEQ:     NSLocalizedString(@"31-band Graphic Equalizer", nil),
+        EmbraceMappedEffectParametricEQ: NSLocalizedString(@"Parametric Equalizer", nil),
+
+        EmbraceEffectDeclick: NSLocalizedString(@"Declick", nil),
+        EmbraceEffectDehum:   NSLocalizedString(@"Dehum", nil),
 
         @"AUDynamicsProcessor":   NSLocalizedString(@"Dynamics Processor", nil),
         @"AUHipass":              NSLocalizedString(@"Highpass Filter", nil),

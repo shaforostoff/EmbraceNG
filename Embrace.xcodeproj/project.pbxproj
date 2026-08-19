@@ -78,6 +78,10 @@
 		556ACE24187ABB8100AED4BC /* EditSystemEffectWindow.xib in Resources */ = {isa = PBXBuildFile; fileRef = 556ACE23187ABB8100AED4BC /* EditSystemEffectWindow.xib */; };
 		556ACE2F187B901400AED4BC /* WaveformView.m in Sources */ = {isa = PBXBuildFile; fileRef = 556ACE2E187B901400AED4BC /* WaveformView.m */; };
 		556ACE36187BB43A00AED4BC /* WrappedUtils.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 556ACE35187BB43A00AED4BC /* WrappedUtils.cpp */; };
+		DEC1DE000000000000000011 /* declick_core.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000002 /* declick_core.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
+		DEC1DE000000000000000014 /* ParameterFormView.m in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000008 /* ParameterFormView.m */; };
+		DEC1DE000000000000000012 /* dehum_core.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000004 /* dehum_core.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
+		DEC1DE000000000000000013 /* RestorationAudioUnit.mm in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000006 /* RestorationAudioUnit.mm */; settings = {COMPILER_FLAGS = "-O2"; }; };
 		556B496420CF772D00A4E83E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 556B496320CF772D00A4E83E /* Assets.xcassets */; };
 		55717BF5187EA65400213213 /* SetlistButton.m in Sources */ = {isa = PBXBuildFile; fileRef = 55717BF4187EA65400213213 /* SetlistButton.m */; };
 		55717BF8187EAB8C00213213 /* SetlistSlider.m in Sources */ = {isa = PBXBuildFile; fileRef = 55717BF7187EAB8C00213213 /* SetlistSlider.m */; };
@@ -309,6 +313,14 @@
 		556ACE2E187B901400AED4BC /* WaveformView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = WaveformView.m; path = Source/WaveformView.m; sourceTree = SOURCE_ROOT; };
 		556ACE34187BB43A00AED4BC /* WrappedUtils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = WrappedUtils.h; path = Source/WrappedUtils.h; sourceTree = "<group>"; };
 		556ACE35187BB43A00AED4BC /* WrappedUtils.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = WrappedUtils.cpp; path = Source/WrappedUtils.cpp; sourceTree = "<group>"; };
+		DEC1DE000000000000000001 /* declick_core.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = declick_core.h; path = Source/declick_core.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000007 /* ParameterFormView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ParameterFormView.h; path = Source/ParameterFormView.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000008 /* ParameterFormView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = ParameterFormView.m; path = Source/ParameterFormView.m; sourceTree = "<group>"; };
+		DEC1DE000000000000000002 /* declick_core.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = declick_core.cpp; path = Source/declick_core.cpp; sourceTree = "<group>"; };
+		DEC1DE000000000000000003 /* dehum_core.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = dehum_core.h; path = Source/dehum_core.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000004 /* dehum_core.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = dehum_core.cpp; path = Source/dehum_core.cpp; sourceTree = "<group>"; };
+		DEC1DE000000000000000005 /* RestorationAudioUnit.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RestorationAudioUnit.h; path = Source/RestorationAudioUnit.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000006 /* RestorationAudioUnit.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = RestorationAudioUnit.mm; path = Source/RestorationAudioUnit.mm; sourceTree = "<group>"; };
 		556B496320CF772D00A4E83E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = Resources/Assets.xcassets; sourceTree = "<group>"; };
 		556EAED81FEA011B00EF68C3 /* Worker_Release.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Worker_Release.xcconfig; path = Config/Combined/Worker_Release.xcconfig; sourceTree = "<group>"; };
 		556EAED91FEA011B00EF68C3 /* Worker_Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Worker_Debug.xcconfig; path = Config/Combined/Worker_Debug.xcconfig; sourceTree = "<group>"; };
@@ -604,6 +616,21 @@
 			name = Hug;
 			sourceTree = "<group>";
 		};
+		DEC1DE000000000000000021 /* Restoration */ = {
+			isa = PBXGroup;
+			children = (
+				DEC1DE000000000000000001 /* declick_core.h */,
+				DEC1DE000000000000000002 /* declick_core.cpp */,
+				DEC1DE000000000000000003 /* dehum_core.h */,
+				DEC1DE000000000000000004 /* dehum_core.cpp */,
+				DEC1DE000000000000000005 /* RestorationAudioUnit.h */,
+				DEC1DE000000000000000006 /* RestorationAudioUnit.mm */,
+				DEC1DE000000000000000007 /* ParameterFormView.h */,
+				DEC1DE000000000000000008 /* ParameterFormView.m */,
+			);
+			name = Restoration;
+			sourceTree = "<group>";
+		};
 		556ACE30187BB3F800AED4BC /* Wrapped C++ */ = {
 			isa = PBXGroup;
 			children = (
@@ -656,6 +683,7 @@
 				55DD53A518B9FC3E0084628D /* Utils */,
 				551A79492C8E3E13006BB34A /* Crash Report */,
 				556ACE30187BB3F800AED4BC /* Wrapped C++ */,
+				DEC1DE000000000000000021 /* Restoration */,
 				5514B6401CDEE64200F238B7 /* Worker */,
 				5514B6661CDF3B9A00F238B7 /* Shared */,
 				55BC0B1C1878D7FA00D84481 /* Model */,
@@ -1207,6 +1235,10 @@
 				5559540121C0C1FC0032EE54 /* HugCrashPad.m in Sources */,
 				5581437C2F994F9200CB4DCD /* InnerShadowView.m in Sources */,
 				556ACE36187BB43A00AED4BC /* WrappedUtils.cpp in Sources */,
+				DEC1DE000000000000000011 /* declick_core.cpp in Sources */,
+				DEC1DE000000000000000014 /* ParameterFormView.m in Sources */,
+				DEC1DE000000000000000012 /* dehum_core.cpp in Sources */,
+				DEC1DE000000000000000013 /* RestorationAudioUnit.mm in Sources */,
 				557C439A1D615CDC000184D8 /* TipArrowFloater.m in Sources */,
 				555953F521B8B6FB0032EE54 /* HugAudioSource.m in Sources */,
 				552C9E4F1883EBA40041C160 /* Preferences.m in Sources */,

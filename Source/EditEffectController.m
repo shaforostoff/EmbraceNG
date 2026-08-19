@@ -161,6 +161,7 @@
 - (IBAction) restoreDefaultValues:(id)sender
 {
     [[self effect] restoreDefaultValues];
+    [self reloadData];
 }
 
 

@@ -5,6 +5,7 @@
 #import "Effect.h"
 #import "EffectAdditions.h"
 #import "EffectType.h"
+#import "ParameterFormView.h"
 #import <objc/runtime.h>
 
 #import <CoreAudioKit/CoreAudioKit.h>
@@ -22,6 +23,7 @@
 @implementation EditSystemEffectController {
     NSView *_effectView;
     NSViewController *_effectViewController;
+    ParameterFormView *_parameterFormView;
     BOOL _inViewFrameCallback;
 }
 
@@ -45,6 +47,24 @@
     Effect *effect = [self effect];
     if (!effect) return;
 
+    // Units with no view of their own -- ours, and any third-party effect that
+    // ships without one -- get a form built from the parameter tree.
+    if (![[effect audioUnit] providesUserInterface]) {
+        _parameterFormView = [[ParameterFormView alloc] initWithAudioUnit:[effect audioUnit]];
+
+        NSViewController *viewController = [[NSViewController alloc] init];
+        [viewController setView:_parameterFormView];
+
+        // Deferred for the same reason the audio unit path is: -contentLayoutRect
+        // is only meaningful once the window and its toolbar have been laid out.
+        __weak id weakFormSelf = self;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [weakFormSelf _didReceiveViewController:viewController];
+        });
+
+        return;
+    }
+
     __weak id weakSelf = self;
 
     [[effect audioUnit] requestViewControllerWithCompletionHandler:^(AUViewControllerBase *viewController) {
@@ -55,10 +75,19 @@
 }
 
 
+- (void) reloadData
+{
+    [_parameterFormView reloadData];
+}
+
+
 #pragma mark - Private Methods
 
 - (void) _didReceiveViewController:(NSViewController *)vc
 {
+    // A unit can decline to supply one, and -addSubview:nil throws
+    if (![vc view]) return;
+
     NSWindow *window = [self window];
 
     NSRect contentLayoutRect = [window contentLayoutRect];
