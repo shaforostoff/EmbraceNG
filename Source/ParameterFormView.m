@@ -42,6 +42,7 @@ static const CGFloat sGap         = 8;
 
 @implementation ParameterFormView {
     AUAudioUnit *_audioUnit;
+    id<ParameterDescribing> _describing;
     NSArray<AUParameter *> *_parameters;
 
     NSMutableArray<ParameterSlider *> *_sliders;
@@ -63,6 +64,7 @@ static const CGFloat sGap         = 8;
 
     if ((self = [super initWithFrame:NSMakeRect(0, 0, width, height)])) {
         _audioUnit   = audioUnit;
+        _describing  = (id<ParameterDescribing>)audioUnit;
         _parameters  = parameters;
         _fittingSize = CGSizeMake(width, height);
 
@@ -93,6 +95,7 @@ static const CGFloat sGap         = 8;
         NSTextField *label = [NSTextField labelWithString:[parameter displayName]];
         [label setFrame:NSMakeRect(x, y + 3, sLabelWidth, sRowHeight - 3)];
         [label setAlignment:NSTextAlignmentRight];
+        [label setTag:row];
         [label setTextColor:[NSColor controlTextColor]];
         [self addSubview:label];
 
@@ -108,7 +111,11 @@ static const CGFloat sGap         = 8;
         [slider setAction:@selector(_handleSlider:)];
         [slider setDoubleTarget:self];
         [slider setDoubleSelector:@selector(_handleSliderDoubleClick:)];
-        [slider setToolTip:NSLocalizedString(@"Double-click to restore the default value", nil)];
+
+        // On all three, so the row explains itself wherever the pointer lands
+        NSString *toolTip = [self _toolTipForParameter:parameter];
+        [label  setToolTip:toolTip];
+        [slider setToolTip:toolTip];
 
         // Indexed parameters only take whole numbers, so let the slider snap
         if ([parameter unit] == kAudioUnitParameterUnit_Indexed) {
@@ -132,11 +139,27 @@ static const CGFloat sGap         = 8;
         [valueField setTarget:self];
         [valueField setAction:@selector(_handleValueField:)];
         [[valueField cell] setLineBreakMode:NSLineBreakByClipping];
+        [valueField setToolTip:toolTip];
         [self addSubview:valueField];
         [_valueFields addObject:valueField];
 
         row++;
     }
+}
+
+
+- (NSString *) _toolTipForParameter:(AUParameter *)parameter
+{
+    NSString *help = nil;
+
+    if ([_describing respondsToSelector:@selector(embrace_helpTextForParameterAddress:)]) {
+        help = [_describing embrace_helpTextForParameterAddress:[parameter address]];
+    }
+
+    if ([help length]) return help;
+
+    // Nothing to say about the parameter itself, so at least surface the gesture
+    return NSLocalizedString(@"Double-click to restore the default value.", nil);
 }
 
 
@@ -193,15 +216,10 @@ static const CGFloat sGap         = 8;
     NSInteger row = [sender tag];
     if (row < 0 || row >= (NSInteger)[_parameters count]) return;
 
-    SEL selector = @selector(embrace_defaultValueForParameterAddress:);
-    if (![_audioUnit respondsToSelector:selector]) return;
+    if (![_describing respondsToSelector:@selector(embrace_defaultValueForParameterAddress:)]) return;
 
     AUParameter *parameter = [_parameters objectAtIndex:row];
-
-    AUValue (*defaultValueFor)(id, SEL, AUParameterAddress) =
-        (AUValue (*)(id, SEL, AUParameterAddress))[_audioUnit methodForSelector:selector];
-
-    [parameter setValue:defaultValueFor(_audioUnit, selector, [parameter address]) originator:NULL];
+    [parameter setValue:[_describing embrace_defaultValueForParameterAddress:[parameter address]] originator:NULL];
 
     [self _updateRow:row];
 }

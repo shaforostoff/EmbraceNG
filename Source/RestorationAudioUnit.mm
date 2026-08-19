@@ -9,6 +9,7 @@
 
 #import "declick_core.h"
 #import "dehum_core.h"
+#import "ParameterFormView.h"
 
 #import <AVFoundation/AVFoundation.h>
 
@@ -88,7 +89,7 @@ static AUParameter *sMakeParameter(
 
 #pragma mark - Base Unit
 
-@interface RestorationAudioUnit : AUAudioUnit
+@interface RestorationAudioUnit : AUAudioUnit <ParameterDescribing>
 
 // Subclass hooks, all main thread.  The DSP is built once in -init and freed in
 // -dealloc so its address never moves: a render block captures that pointer, and
@@ -101,6 +102,9 @@ static AUParameter *sMakeParameter(
 - (NSArray<AUParameter *> *) createParameters;
 - (AUInternalRenderBlock) createRenderBlock;
 
+// One entry per parameter, in the order -createParameters returns them
+- (NSArray<NSString *> *) createParameterHelp;
+
 @property (nonatomic, readonly) RestorationState *state;
 
 @end
@@ -112,6 +116,7 @@ static AUParameter *sMakeParameter(
     AUAudioUnitBus      *_inputBus;
     AUAudioUnitBus      *_outputBus;
     AUParameterTree     *_parameterTree;
+    NSArray<NSString *> *_parameterHelp;
 
     RestorationState    *_state;
 }
@@ -140,6 +145,7 @@ static AUParameter *sMakeParameter(
 
         NSArray<AUParameter *> *parameters = [self createParameters];
         _parameterTree = [AUParameterTree createTreeWithChildren:parameters];
+        _parameterHelp = [self createParameterHelp];
 
         RestorationState *state = _state;
 
@@ -212,6 +218,13 @@ static AUParameter *sMakeParameter(
 }
 
 
+- (NSString *) embrace_helpTextForParameterAddress:(AUParameterAddress)address
+{
+    if (address >= [_parameterHelp count]) return nil;
+    return [_parameterHelp objectAtIndex:address];
+}
+
+
 // The value each parameter was created with, i.e. Params::defaults().  Read by
 // ParameterFormView so double-clicking one control resets just that control.
 - (AUValue) embrace_defaultValueForParameterAddress:(AUParameterAddress)address
@@ -227,6 +240,7 @@ static AUParameter *sMakeParameter(
 - (void) destroyDSP { }
 - (void) configureDSPWithSampleRate:(double)sampleRate channels:(int)channels { }
 - (NSArray<AUParameter *> *) createParameters { return @[ ]; }
+- (NSArray<NSString *> *) createParameterHelp { return @[ ]; }
 - (AUInternalRenderBlock) createRenderBlock { return nil; }
 
 @end
@@ -342,6 +356,39 @@ struct DeclickDSP {
         sMakeParameter(@"passes",      NSLocalizedString(@"Passes",       nil), 4, 1,   3,  defaults.passes,      kAudioUnitParameterUnit_Indexed),
         sMakeParameter(@"order",       NSLocalizedString(@"Model Order",  nil), 5, declick::kMinOrder, declick::kMaxOrder, defaults.order, kAudioUnitParameterUnit_Indexed),
         sMakeParameter(@"dryWet",      NSLocalizedString(@"Dry/Wet",      nil), 6, 0,   1,  defaults.dryWet,      kAudioUnitParameterUnit_Generic)
+    ];
+}
+
+
+// Condensed from the rationale in declick_core.h, which has the measurements.
+- (NSArray<NSString *> *) createParameterHelp
+{
+    return @[
+        NSLocalizedString(@"How readily a sample is called a click. The default puts the trigger at "
+            "3.9 sigma above the local noise estimate; on 78rpm tango transfers that takes impulsive "
+            "events from roughly 71 per second down to 14. Raise it towards 0.8 to catch more, at the "
+            "cost of flagging music as damage.", nil),
+
+        NSLocalizedString(@"How far each detection spreads outwards into the tail of the click. "
+            "Higher repairs more of the decay; too high starts replacing good audio either side of it.", nil),
+
+        NSLocalizedString(@"The longest single stretch that may be reconstructed. Damage longer than "
+            "this is left alone rather than guessed at.", nil),
+
+        NSLocalizedString(@"How much of the estimated click is subtracted. 0 is the setting measured "
+            "to add the least error of its own, against real clicks injected into a clean master at "
+            "known positions. Raising it removes more of each click but substitutes more guesswork.", nil),
+
+        NSLocalizedString(@"How many times the detector sweeps each block. A second pass catches "
+            "clicks that the first pass's repairs uncover.", nil),
+
+        NSLocalizedString(@"Taps in the autoregressive model that predicts what the waveform should "
+            "have been. The lever that pays most: against injected-click ground truth, 128 takes "
+            "whole-file error from +0.60 to +1.31 dB and 256 to +2.55 dB. It also costs real CPU and "
+            "adds latency, which is why the default stops at 64.", nil),
+
+        NSLocalizedString(@"Blend of the repaired signal against the original. 0 passes the input "
+            "through untouched.", nil)
     ];
 }
 
@@ -498,6 +545,41 @@ struct DehumDSP {
         sMakeParameter(@"frequency",   NSLocalizedString(@"Frequency",   nil), 4, 0,   500, defaults.frequency,   kAudioUnitParameterUnit_Hertz),
         sMakeParameter(@"rumble",      NSLocalizedString(@"Rumble",      nil), 5, 0,   200, defaults.rumbleHz,    kAudioUnitParameterUnit_Hertz),
         sMakeParameter(@"dryWet",      NSLocalizedString(@"Dry/Wet",     nil), 6, 0,   1,   defaults.dryWet,      kAudioUnitParameterUnit_Generic)
+    ];
+}
+
+
+// Condensed from the rationale in dehum_core.h, which has the measurements.
+- (NSArray<NSString *> *) createParameterHelp
+{
+    return @[
+        NSLocalizedString(@"How far a spectral peak must stand above its surroundings before it "
+            "counts as a tone. The default maps to a 16 dB prominence threshold, which the reference "
+            "hum clears on 87% of analysis hops while hum-free material manages at most 10%. Past "
+            "about 0.7, clean material starts qualifying.", nil),
+
+        NSLocalizedString(@"Half width of each notch. 1 Hz costs nothing musically - a partial 5 Hz "
+            "away loses 0.15 dB - and is wide enough to absorb the detector's own error before the "
+            "frequency tracker converges on the line.", nil),
+
+        NSLocalizedString(@"Top of the range searched for hum automatically. Hum lives low; searching "
+            "higher finds sustained musical notes instead - during calibration a bandoneon E4 at "
+            "329 Hz was detected as hum and duly cancelled.", nil),
+
+        NSLocalizedString(@"Multiples of each detected line to cancel as well. Mains buzz has them; "
+            "the off-frequency drones on speed-corrected disc transfers usually do not, and the extra "
+            "notches land squarely in the musical register.", nil),
+
+        NSLocalizedString(@"0 detects the line automatically, which needs a few seconds of steady "
+            "evidence before it engages. Set a frequency to pin the notch there instead, when you "
+            "already know what you are removing.", nil),
+
+        NSLocalizedString(@"High-pass corner for broadband turntable rumble - a separate defect that "
+            "happens to share the band with hum. 0 turns it off. Higher removes more rumble, and more "
+            "of the bass along with it.", nil),
+
+        NSLocalizedString(@"Blend of the processed signal against the original. 0 passes the input "
+            "through untouched.", nil)
     ];
 }
 
