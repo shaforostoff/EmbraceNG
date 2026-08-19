@@ -239,6 +239,15 @@ static void sCollectM3UPlaylistURL(NSURL *inURL, NSMutableArray *results, NSInte
             [[self tableView] insertRowsAtIndexes:indexSet withAnimation:NSTableViewAnimationEffectFade];
 
             [[self tableView] endUpdates];
+
+            if ([indexSet count]) {
+                NSTableView *tableView = [self tableView];
+
+                [tableView selectRowIndexes:indexSet byExtendingSelection:NO];
+                [tableView scrollRowToVisible:[indexSet firstIndex]];
+
+                [[tableView window] makeFirstResponder:tableView];
+            }
             
             [self _didModifyTracks];
 
@@ -1074,11 +1083,53 @@ static void sCollectM3UPlaylistURL(NSURL *inURL, NSMutableArray *results, NSInte
     NSArray  *tracks   = [self selectedTracks];
     NSString *contents = [[ExportManager sharedInstance] stringWithFormat:ExportManagerFormatPlainText tracks:tracks];
 
-    NSPasteboardItem *item = [[NSPasteboardItem alloc] initWithPasteboardPropertyList:contents ofType:NSPasteboardTypeString];
+    NSMutableArray *items = [NSMutableArray array];
+
+    for (Track *track in tracks) {
+        NSURL *fileURL = [track internalURL];
+        if (!fileURL) fileURL = [track externalURL];
+        if (!fileURL) continue;
+
+        NSPasteboardItem *item = [[NSPasteboardItem alloc] init];
+        [item setString:[fileURL absoluteString] forType:NSPasteboardTypeFileURL];
+
+        [items addObject:item];
+    }
+
+    if ([items count]) {
+        [[items firstObject] setString:contents forType:NSPasteboardTypeString];
+    } else {
+        [items addObject:[[NSPasteboardItem alloc] initWithPasteboardPropertyList:contents ofType:NSPasteboardTypeString]];
+    }
 
     NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
     [pasteboard clearContents];
-    [pasteboard writeObjects:[NSArray arrayWithObject:item]];
+    [pasteboard writeObjects:items];
+}
+
+
+- (NSUInteger) _indexForPaste
+{
+    NSIndexSet *selectedRows = [[self tableView] selectedRowIndexes];
+
+    NSUInteger index = [selectedRows count] ? [selectedRows firstIndex] : [_tracks count];
+    if (index > [_tracks count]) index = [_tracks count];
+
+    Track *trackAtIndex = [self trackAtIndex:index];
+
+    if (!trackAtIndex || [trackAtIndex trackStatus] == TrackStatusQueued) {
+        return index;
+    }
+
+    NSUInteger indexAfterLastNonQueued = 0;
+    NSUInteger i = 0;
+
+    for (Track *track in _tracks) {
+        i++;
+        if ([track trackStatus] != TrackStatusQueued) indexAfterLastNonQueued = i;
+    }
+
+    return indexAfterLastNonQueued;
 }
 
 
@@ -1086,26 +1137,32 @@ static void sCollectM3UPlaylistURL(NSURL *inURL, NSMutableArray *results, NSInte
 {
     NSPasteboard *pboard = [NSPasteboard generalPasteboard];
 
-    NSArray  *filenames = [pboard propertyListForType:@"NSFilenamesPboardType"];
-    NSString *URLString = [pboard stringForType:(__bridge NSString *)kUTTypeFileURL];
+    NSMutableArray *fileURLs = [NSMutableArray array];
 
-    if (filenames) {
-        NSMutableArray *fileURLs = [NSMutableArray array];
+    NSArray *filenames = [pboard propertyListForType:@"NSFilenamesPboardType"];
 
+    if ([filenames isKindOfClass:[NSArray class]]) {
         for (NSString *filename in filenames) {
+            if (![filename isKindOfClass:[NSString class]]) continue;
+
             NSURL *fileURL = [NSURL fileURLWithPath:filename];
             if (fileURL) [fileURLs addObject:fileURL];
         }
+    }
 
-        [self addTracksWithURLs:fileURLs];
+    if (![fileURLs count]) {
+        NSDictionary *options = @{ NSPasteboardURLReadingFileURLsOnlyKey: @YES };
 
-    } else if (URLString) {
-        NSURL *fileURL = [NSURL URLWithString:URLString];
-
-        if (fileURL) {
-            [self addTracksWithURLs:@[ fileURL ]];
+        for (NSURL *url in [pboard readObjectsForClasses:@[ [NSURL class] ] options:options]) {
+            // foobar2000 writes a bare POSIX path into public.file-url, not a URL string
+            NSURL *fileURL = [url isFileURL] ? url : [NSURL fileURLWithPath:[url path]];
+            if (fileURL) [fileURLs addObject:fileURL];
         }
     }
+
+    if (![fileURLs count]) return;
+
+    [self _addTracksWithURLs:fileURLs atIndex:[self _indexForPaste]];
 }
 
 
