@@ -29,9 +29,9 @@ static const int sMaxParameters = 8;
 
 
 // Bypass runs the DSP with a wet mix of zero rather than skipping it, which is
-// what makes A/B useful: declick's latency stays put so the two versions line up
-// sample for sample, and dehum's detector keeps tracking, so switching back does
-// not cost the several seconds it takes to re-acquire a line.
+// what makes A/B useful: declick keeps reading ahead by the same amount, so the
+// two versions line up sample for sample, and dehum's detector keeps tracking, so
+// switching back does not cost the several seconds it takes to re-acquire a line.
 //
 struct RestorationState {
     std::atomic<float> value[sMaxParameters];
@@ -259,7 +259,21 @@ struct DeclickDSP {
     double sampleRate = 44100;
     int    channels   = 2;
     bool   haveActive = false;
-    bool   needsPrime = true;
+    bool   configured = false;
+
+    // Where the read-ahead pulls land.  One render is the most a single pull asks
+    // for, so this is sized to maximumFramesToRender.
+    AudioBufferList *lookahead         = NULL;
+    UInt32           lookaheadCapacity = 0;
+
+    ~DeclickDSP() { freeLookahead(); }
+
+    void freeLookahead()
+    {
+        if (lookahead) HugAudioBufferListFree(lookahead, YES);
+        lookahead = NULL;
+        lookaheadCapacity = 0;
+    }
 
     declick::Params paramsFrom(const RestorationState *state) const
     {
@@ -285,7 +299,7 @@ struct DeclickDSP {
         declick::Config next;
         next.compute(p, sampleRate);
 
-        if (!needsPrime && next.structurallyEquals(cfg)) {
+        if (configured && next.structurallyEquals(cfg)) {
             bool retuned = true;
 
             for (int i = 0; i < channels; i++) {
@@ -302,38 +316,88 @@ struct DeclickDSP {
 
         // Only Max Repair and Model Order reach here.  Past the first call it
         // allocates nothing -- see the buffer envelope in declick::Config -- but
-        // prime() does push `latency` samples through the model, so moving those
-        // two under a live stream is not free.
+        // configure() empties the pipeline, and the next render then has to read
+        // the model's lookahead back in before it can emit, so moving those two
+        // under a live stream is not free.
         for (int i = 0; i < channels; i++) {
             channel[i].configure(next);
-            channel[i].prime();
         }
 
         cfg = next;
         active = p;
         haveActive = true;
-        needsPrime = false;
+        configured = true;
     }
 
-    void restart(double rate, int chans)
+    void restart(double rate, int chans, UInt32 maxFrames)
     {
         sampleRate = rate;
         channels   = chans;
         haveActive = false;
-        needsPrime = true;
+        configured = false;
+
+        // Main thread, from -allocateRenderResources, which is the only place
+        // either the channel count or the render size can change.
+        freeLookahead();
+        lookahead = HugAudioBufferListCreate((UInt32)chans, maxFrames, YES);
+        lookaheadCapacity = lookahead ? maxFrames : 0;
     }
 
-    void process(AudioBufferList *bufferList, AUAudioFrameCount frames)
+    // Repairing a sample needs the samples that come after it, so the model has
+    // to be fed ahead of the audio being heard.  The usual way is prime(): push
+    // `latency` zeros and let everything come out that much later.  A file player
+    // does not have to pay that, because the future is sitting in the file -- so
+    // instead of priming, keep pulling upstream until the pipeline can satisfy
+    // this render.  What that spends is read position rather than time: the
+    // source ends up running about a render ahead of the speakers, and the output
+    // is bit-identical to the same core run over the whole file in one go.
+    //
+    // An underrun cannot happen, because the pull below only runs once
+    // available() is already large enough.  The guard is here because this is the
+    // render thread: at `frameCount` a time it takes latency/frameCount
+    // iterations, and measured it never wants more than one beyond that.
+    //
+    // The timestamp goes out unchanged.  Upstream reads it only to stamp its own
+    // status, and HugAudioEngine is what accounts for the offset these pulls
+    // open up between the read position and the audio being heard.
+    AUAudioUnitStatus readAhead(AUAudioFrameCount frameCount,
+                                const AudioTimeStamp *timestamp,
+                                AURenderPullInputBlock pullInputBlock)
+    {
+        if (!lookahead || frameCount > lookaheadCapacity) {
+            return kAudioUnitErr_TooManyFramesToProcess;
+        }
+
+        int guard = (cfg.latency / (int)frameCount) + 4;
+
+        while (channel[0].available() < frameCount) {
+            if (guard-- <= 0) return kAudioUnitErr_TooManyFramesToProcess;
+
+            for (UInt32 i = 0; i < lookahead->mNumberBuffers; i++) {
+                lookahead->mBuffers[i].mDataByteSize = frameCount * sizeof(float);
+            }
+
+            AudioUnitRenderActionFlags pullFlags = 0;
+
+            AUAudioUnitStatus err = pullInputBlock(&pullFlags, timestamp, frameCount, 0, lookahead);
+            if (err) return err;
+
+            int count = std::min((int)lookahead->mNumberBuffers, channels);
+
+            for (int i = 0; i < count; i++) {
+                channel[i].push((const float *)lookahead->mBuffers[i].mData, frameCount, 1);
+            }
+        }
+
+        return noErr;
+    }
+
+    void emit(AudioBufferList *bufferList, AUAudioFrameCount frames)
     {
         int count = std::min((int)bufferList->mNumberBuffers, channels);
 
         for (int i = 0; i < count; i++) {
-            float *samples = (float *)bufferList->mBuffers[i].mData;
-
-            // prime() left `latency` samples in the pipe, so a pull the same
-            // size as the push can never come up short.
-            channel[i].push(samples, frames, 1);
-            channel[i].pull(samples, frames, 1);
+            channel[i].pull((float *)bufferList->mBuffers[i].mData, frames, 1);
         }
     }
 };
@@ -402,14 +466,16 @@ struct DeclickDSP {
 
 - (void) configureDSPWithSampleRate:(double)sampleRate channels:(int)channels
 {
-    _dsp->restart(sampleRate, channels);
+    _dsp->restart(sampleRate, channels, (UInt32)[self maximumFramesToRender]);
     _dsp->update([self state]);
 }
 
 
+// Zero rather than cfg.latency: the model's lookahead is met by reading ahead of
+// the playhead, not by holding the output back.  See DeclickDSP::readAhead.
 - (NSTimeInterval) latency
 {
-    return _dsp->cfg.latency / _dsp->sampleRate;
+    return 0;
 }
 
 
@@ -432,14 +498,16 @@ struct DeclickDSP {
         AUAudioUnitStatus err = sPrepareBufferList(outputData, frameCount);
         if (err) return err;
 
-        AudioUnitRenderActionFlags pullFlags = 0;
-        err = pullInputBlock(&pullFlags, timestamp, frameCount, 0, outputData);
-        if (err) return err;
-
         declick::scoped_flush_denormals ftz;
 
+        // Ahead of the read-ahead, because a Model Order change empties the
+        // pipeline and refilling it is the read-ahead's job.
         dsp->update(state);
-        dsp->process(outputData, frameCount);
+
+        err = dsp->readAhead(frameCount, timestamp, pullInputBlock);
+        if (err) return err;
+
+        dsp->emit(outputData, frameCount);
 
         return noErr;
     };

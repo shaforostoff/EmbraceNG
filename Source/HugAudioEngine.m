@@ -83,6 +83,14 @@ typedef struct {
     volatile float preGain;
 
     volatile UInt64 renderStart;
+
+    // Frames drawn from the front of the chain, and frames handed to the device.
+    // An effect with lookahead pulls its input ahead of the audio it emits, which
+    // leaves the source reading ahead of what is being heard; the difference is
+    // how far, and lookaheadHostTime is that difference as a duration.
+    volatile UInt64 sourceFrames;
+    volatile UInt64 outputFrames;
+    volatile UInt64 lookaheadHostTime;
 } RenderUserInfo;
 
 
@@ -418,6 +426,10 @@ static OSStatus sHandleAudioDeviceOverload(AudioObjectID inObjectID, UInt32 inNu
         float *leftData  = ioData->mNumberBuffers > 0 ? ioData->mBuffers[0].mData : NULL;
         float *rightData = ioData->mNumberBuffers > 1 ? ioData->mBuffers[1].mData : NULL;
 
+        // Counts pulls rather than renders: an effect with lookahead calls this
+        // block more than once for a single render.
+        userInfo->sourceFrames += inNumberFrames;
+
         if (!inputBlock) {
             *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
             HugApplySilence(leftData, inNumberFrames);
@@ -444,7 +456,18 @@ static OSStatus sHandleAudioDeviceOverload(AudioObjectID inObjectID, UInt32 inNu
 
         } else {
             if (inputBlock && (timestamp->mFlags & kAudioTimeStampHostTimeValid)) {
-                PacketDataPlayback packet = { timestamp->mHostTime, PacketTypePlayback, info };
+                // Stamped with when this read position will be heard rather than
+                // with when it was read.  _readRingBuffers holds a packet back
+                // until its stamp has passed, so without the offset a source that
+                // is being read ahead would report the end of the file while its
+                // last samples were still in the pipeline, and the track would be
+                // cut short by exactly that much.
+                PacketDataPlayback packet = {
+                    timestamp->mHostTime + userInfo->lookaheadHostTime,
+                    PacketTypePlayback,
+                    info
+                };
+
                 sendStatusPacket(packet);
             }
         }
@@ -546,9 +569,27 @@ static OSStatus sHandleAudioDeviceOverload(AudioObjectID inObjectID, UInt32 inNu
             PacketDataDanger packet = { currentTime, PacketTypeDanger, inNumberFrames, renderTime };
             sendStatusPacket(packet);
         }
-        
+
+        // How far the front of the chain has read past what the device has been
+        // given.  Zero unless an effect reads ahead.
+        {
+            userInfo->outputFrames += inNumberFrames;
+
+            UInt64 sourceFrames = userInfo->sourceFrames;
+            UInt64 outputFrames = userInfo->outputFrames;
+            UInt64 ahead = (sourceFrames > outputFrames) ? (sourceFrames - outputFrames) : 0;
+
+            userInfo->lookaheadHostTime = HugGetHostTimeWithSeconds(ahead / sampleRate);
+        }
+
         return noErr;
     }];
+
+    // Every unit in a rebuilt graph starts with an empty pipeline, so nothing is
+    // reading ahead of anything yet.
+    _renderUserInfo.sourceFrames      = 0;
+    _renderUserInfo.outputFrames      = 0;
+    _renderUserInfo.lookaheadHostTime = 0;
 
     AURenderPullInputBlock blockToSend = [graph renderBlock];
     
