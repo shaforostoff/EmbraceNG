@@ -10,12 +10,15 @@
 #import "declick_core.h"
 #import "dehum_core.h"
 #import "ParameterFormView.h"
+#import "HugAudioFile.h"
+#import "HugUtils.h"
 
 #import <AVFoundation/AVFoundation.h>
 
 #include <atomic>
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 extern const OSType EmbraceRestorationManufacturer = 'Embr';
 extern const OSType EmbraceDeclickSubType          = 'dclk';
@@ -457,6 +460,22 @@ struct DehumDSP {
     bool   haveActive = false;
     bool   configured = false;
 
+    // Published by the main thread once a scout finishes, consumed on the render
+    // thread.  Handed to Channel::adopt(), which starts them confirmed and leaves
+    // the detector running -- so it keeps tracking them, drops them again if the
+    // evidence is not there, and can still find lines the scout missed.
+    dehum::LineReport pendingLines[dehum::kMaxLines];
+    int               pendingCount;
+    std::atomic<bool> pendingReady;
+
+    std::atomic<bool> forgetPending;
+
+    // Bumped per track.  A scout reads a minute of audio, which is long enough
+    // that someone working through a set list can leave several in flight.
+    std::atomic<long>  scoutGeneration;
+
+    DehumDSP() : pendingCount(0), pendingReady(false), forgetPending(false), scoutGeneration(0) { }
+
     dehum::Params paramsFrom(const RestorationState *state) const
     {
         dehum::Params p = dehum::Params::defaults();
@@ -475,33 +494,59 @@ struct DehumDSP {
 
     void update(const RestorationState *state)
     {
+        // A new record means a new hum, so nothing carries over.  reset() only
+        // memsets buffers it already holds, so this is safe here.
+        if (forgetPending.exchange(false, std::memory_order_relaxed)) {
+            for (int i = 0; i < channels; i++) {
+                channel[i].reset();
+            }
+        }
+
         dehum::Params p = paramsFrom(state);
-        if (haveActive && p == active) return;
 
-        dehum::Config next;
-        next.compute(p, sampleRate);
+        if (!haveActive || p != active) {
+            dehum::Config next;
+            next.compute(p, sampleRate);
 
-        // Only the sample rate sizes anything here, so every parameter move
-        // retunes in place and the lines already acquired survive it.
-        bool retuned = configured && next.structurallyEquals(cfg);
+            // Only the sample rate sizes anything here, so every parameter move
+            // retunes in place and the lines already acquired survive it.
+            bool retuned = configured && next.structurallyEquals(cfg);
 
-        if (retuned) {
-            for (int i = 0; i < channels; i++) {
-                if (!channel[i].retune(next)) retuned = false;
-            }
-        }
-
-        if (!retuned) {
-            for (int i = 0; i < channels; i++) {
-                channel[i].configure(next);
+            if (retuned) {
+                for (int i = 0; i < channels; i++) {
+                    if (!channel[i].retune(next)) retuned = false;
+                }
             }
 
-            configured = true;
+            if (!retuned) {
+                for (int i = 0; i < channels; i++) {
+                    channel[i].configure(next);
+                }
+
+                configured = true;
+            }
+
+            cfg = next;
+            active = p;
+            haveActive = true;
         }
 
-        cfg = next;
-        active = p;
-        haveActive = true;
+        // Last of all, because configure() ends in reset() and would discard them
+        if (pendingReady.load(std::memory_order_acquire)) {
+            // Copied out first: a track change can republish while we are here,
+            // and adopt() should see one coherent set rather than half of two.
+            dehum::LineReport lines[dehum::kMaxLines];
+            int count = pendingCount;
+
+            if (count > (int)dehum::kMaxLines) count = (int)dehum::kMaxLines;
+            for (int i = 0; i < count; i++) lines[i] = pendingLines[i];
+
+            pendingReady.store(false, std::memory_order_relaxed);
+
+            for (int i = 0; i < channels; i++) {
+                channel[i].adopt(lines, count);
+            }
+        }
     }
 
     void restart(double rate, int chans)
@@ -523,7 +568,113 @@ struct DehumDSP {
 };
 
 
-@interface DehumAudioUnit : RestorationAudioUnit
+
+// Reads the opening of a file and returns the line dehum settles on, in Hz, or 0
+// if it found nothing worth cancelling.  Off the main thread.
+//
+// Analysed at the file's own sample rate, which saves resampling it: a hum sits
+// at the same frequency in Hz whatever rate you look at it from, so the figure
+// transfers straight to the live unit running at the device rate.
+//
+// Sixty seconds, which is not generous.  Measured on 78rpm tango transfers: a
+// line the prominence route can see turns up inside 15 s, but one sitting down in
+// the rumble - 7.8 dB prominent, well under the 16 dB threshold - only reaches the
+// coherence route at 43 s, because that ratio accumulates over kCohWindowSec.
+// Those are exactly the transfers this is worth doing for, so the window has to
+// cover them.  Costs about 1.7 s of one core for 60 s of mono audio.
+//
+static int sScoutHumLines(NSURL *fileURL, float sensitivity, float searchTo,
+                          const std::atomic<long> *generationNow, long generation,
+                          dehum::LineReport *out, int max)
+{
+    static const double sSecondsToRead = 60.0;
+    static const UInt32 sBlockFrames   = 4096;
+
+    HugAudioFile *file = [[HugAudioFile alloc] initWithFileURL:fileURL];
+    if (![file open]) return 0;
+
+    double    rate         = [file sampleRate];
+    NSInteger fileChannels = [file channelCount];
+
+    if (rate <= 0 || fileChannels < 1) {
+        [file close];
+        return 0;
+    }
+
+    dehum::Params p = dehum::Params::defaults();
+    p.sensitivity = sensitivity;
+    p.searchTo    = searchTo;
+    p.frequency   = 0;
+    p.sanitize();
+
+    dehum::Config cfg;
+    cfg.compute(p, rate);
+
+    dehum::Channel channel;
+    channel.configure(cfg);
+
+    AudioBufferList *bufferList = HugAudioBufferListCreate((UInt32)fileChannels, sBlockFrames, YES);
+    if (!bufferList) {
+        [file close];
+        return 0;
+    }
+
+    // Hum is common mode, so one summed channel finds it for half the work
+    std::vector<float> mono(sBlockFrames);
+
+    SInt64 wanted = (SInt64)(sSecondsToRead * rate);
+    SInt64 read   = 0;
+
+    {
+        dehum::scoped_flush_denormals ftz;
+
+        while (read < wanted) {
+            UInt32 frames = sBlockFrames;
+            if ((SInt64)frames > (wanted - read)) frames = (UInt32)(wanted - read);
+
+            // ExtAudioFileRead updates these, so they go back each time
+            for (UInt32 i = 0; i < bufferList->mNumberBuffers; i++) {
+                bufferList->mBuffers[i].mDataByteSize = frames * sizeof(float);
+            }
+
+            if (![file readFrames:&frames intoBufferList:bufferList]) break;
+            if (frames == 0) break;
+
+            // Another track started; whatever this finds is already stale
+            if (generationNow->load(std::memory_order_relaxed) != generation) {
+                HugAudioBufferListFree(bufferList, YES);
+                [file close];
+                return 0;
+            }
+
+            for (UInt32 f = 0; f < frames; f++) mono[f] = 0;
+
+            for (UInt32 c = 0; c < bufferList->mNumberBuffers; c++) {
+                const float *source = (const float *)bufferList->mBuffers[c].mData;
+                if (!source) continue;
+
+                for (UInt32 f = 0; f < frames; f++) mono[f] += source[f];
+            }
+
+            float scale = 1.0f / (float)bufferList->mNumberBuffers;
+            for (UInt32 f = 0; f < frames; f++) mono[f] *= scale;
+
+            channel.process(mono.data(), frames, 1);
+            read += frames;
+        }
+    }
+
+    HugAudioBufferListFree(bufferList, YES);
+    [file close];
+
+    int count = 0;
+    channel.report(out, max, &count);
+
+    return count;
+}
+
+
+@interface DehumAudioUnit : RestorationAudioUnit <EmbraceTrackScouting>
 @end
 
 
@@ -586,6 +737,55 @@ struct DehumDSP {
 
 - (void) createDSP  { _dsp = new DehumDSP(); }
 - (void) destroyDSP { delete _dsp; _dsp = NULL; }
+
+
+- (void) embrace_scoutFileURL:(NSURL *)fileURL
+{
+    RestorationState *state = [self state];
+
+    // Whatever the last record's hum was, it is not this one's
+    _dsp->pendingReady.store(false, std::memory_order_relaxed);
+    _dsp->forgetPending.store(true, std::memory_order_relaxed);
+
+    // A frequency the user pinned by hand is theirs, not ours to overwrite
+    if (!fileURL || state->get(4) > 0) return;
+
+    float sensitivity = state->get(0);
+    float searchTo    = state->get(2);
+
+    long generation = _dsp->scoutGeneration.fetch_add(1, std::memory_order_relaxed) + 1;
+
+    // self is captured strongly on purpose: it keeps the DSP alive for the scout
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        // A vector rather than an array so the inner block can capture it
+        std::vector<dehum::LineReport> lines((size_t)dehum::kMaxLines);
+
+        int count = sScoutHumLines(fileURL, sensitivity, searchTo,
+                                   &_dsp->scoutGeneration, generation,
+                                   lines.data(), (int)dehum::kMaxLines);
+        lines.resize((size_t)count);
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // A later track already started; its scout owns the lines now
+            if (_dsp->scoutGeneration.load(std::memory_order_relaxed) != generation) return;
+
+            NSMutableArray *described = [NSMutableArray array];
+            for (size_t i = 0; i < lines.size(); i++) {
+                [described addObject:[NSString stringWithFormat:@"%.3f Hz (%s)",
+                    lines[i].frequency, lines[i].viaCoherence ? "coherence" : "prominence"]];
+
+                _dsp->pendingLines[i] = lines[i];
+            }
+
+            EmbraceLog(@"Dehum", @"scouted %@: %@", [fileURL lastPathComponent],
+                [described count] ? [described componentsJoinedByString:@", "]
+                                  : @"no line, leaving it to the detector");
+
+            _dsp->pendingCount = (int)lines.size();
+            _dsp->pendingReady.store(!lines.empty(), std::memory_order_release);
+        });
+    });
+}
 
 
 - (void) configureDSPWithSampleRate:(double)sampleRate channels:(int)channels

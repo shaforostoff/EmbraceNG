@@ -9,6 +9,20 @@
 #import <Foundation/Foundation.h>
 #import <AudioToolbox/AudioToolbox.h>
 
+
+// Effects that can shorten their own learning time by looking at a track before
+// it plays.  Dehum's detector needs a few seconds of steady evidence to settle on
+// a line, which on a file player is time it does not have to spend: reading the
+// opening of the file off-thread finds the line before playback reaches it.
+//
+// Each record carries its own hum, so this is also the point at which whatever
+// was learned from the previous track is thrown away.
+//
+@protocol EmbraceTrackScouting <NSObject>
+- (void) embrace_scoutFileURL:(NSURL *)fileURL;
+@end
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif

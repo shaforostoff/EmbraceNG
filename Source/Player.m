@@ -12,6 +12,7 @@
 #import "HugAudioSettings.h"
 #import "HugAudioSource.h"
 #import "HugAudioFile.h"
+#import "RestorationAudioUnit.h"
 #import "HugUtils.h"
 
 #import <pthread.h>
@@ -597,6 +598,16 @@ static OSStatus sHandleAudioDevicePropertyChanged(AudioObjectID inObjectID, UInt
         EmbraceLog(@"Player", @"Couldn't open %@", file);
         [self hardStop];
         return;
+    }
+
+    // Effects that learn something about a track get to look at it first.  Each
+    // record has its own hum, so this is also where the last one's is forgotten.
+    for (Effect *effect in _effects) {
+        id audioUnit = [effect audioUnit];
+
+        if ([audioUnit conformsToProtocol:@protocol(EmbraceTrackScouting)]) {
+            [audioUnit embrace_scoutFileURL:fileURL];
+        }
     }
 
     [self _updateLoudnessAndPreAmp];
