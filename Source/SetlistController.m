@@ -268,11 +268,19 @@ static NSInteger sAutoGapMaximum = 16;
         }
 
     } else if (action == PlaybackActionStop) {
-        if ([player isPlaying] && [self _shouldVolumeInvokeFadeStop] && (_volumeBeforeDrag || _volumeBeforeKeyboard)) {
+        if ([player isFadingOut]) {
+            icon     = SetlistButtonIconPlay;
             outlined = YES;
+            tooltip  = NSLocalizedString(@"Fading out, click to resume playback", nil);
+
+        } else {
+            if ([player isPlaying] && [self _shouldVolumeInvokeFadeStop] && (_volumeBeforeDrag || _volumeBeforeKeyboard)) {
+                outlined = YES;
+            }
+
+            icon = _confirmStop ? SetlistButtonIconReallyStop : SetlistButtonIconStop;
         }
 
-        icon = _confirmStop ? SetlistButtonIconReallyStop : SetlistButtonIconStop;
         enabled = YES;
 
     } else {
@@ -779,9 +787,26 @@ static NSInteger sAutoGapMaximum = 16;
         [self showAlertForIssue:[[Player sharedInstance] issue]];
 
     } else if (action == PlaybackActionStop) {
+        Player *player = [Player sharedInstance];
+        NSInteger fadeOutDuration = [[Preferences sharedInstance] stopFadeOutDuration];
+
         EmbraceLog(@"SetlistController", @"Performing PlaybackActionStop, _confirmStop is %ld", (long)_confirmStop);
 
-        if (!_confirmStop) {
+        if ([player isFadingOut]) {
+            EmbraceLog(@"SetlistController", @"Resuming playback, fade-out was in progress");
+
+            _confirmStop = NO;
+
+            [player resumeFromFadeOut];
+            [[self playButton] setIcon:SetlistButtonIconStop animated:YES];
+            [self _updatePlayButton];
+
+            return;
+        }
+
+        // A fade-out is reversible for as long as it runs, so it stands in for the
+        // confirmation press.  Only ask twice when fading is turned off.
+        if ((fadeOutDuration == StopFadeOutDurationNone) && !_confirmStop) {
             _confirmStop = YES;
 
             [[self playButton] setIcon:SetlistButtonIconReallyStop animated:YES];
@@ -795,7 +820,7 @@ static NSInteger sAutoGapMaximum = 16;
             
             BOOL isDoubleClick = NO;
 
-            EmbraceLog(@"SetlistController", @"About to -hardStop with event: %@", currentEvent);
+            EmbraceLog(@"SetlistController", @"About to stop with event: %@", currentEvent);
 
             if ((type == NSEventTypeLeftMouseDown) || (type == NSEventTypeRightMouseDown) || (type == NSEventTypeOtherMouseDown)) {
                 isDoubleClick = [currentEvent clickCount] >= 2;
@@ -803,7 +828,16 @@ static NSInteger sAutoGapMaximum = 16;
         
             if (!isDoubleClick) {
                 _confirmStop = NO;
-                [[Player sharedInstance] hardStop];
+
+                if (fadeOutDuration == StopFadeOutDurationNone) {
+                    [player hardStop];
+
+                } else {
+                    [player fadeOutAndStopWithDuration:fadeOutDuration];
+
+                    [[self playButton] setIcon:SetlistButtonIconPlay animated:YES];
+                    [self _updatePlayButton];
+                }
             }
 
             [_volumeTooLowFloater hide];

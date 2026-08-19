@@ -35,6 +35,13 @@ extern volatile NSInteger PlayerShouldUseCrashPad;
 - (void) hardSkip;
 - (void) hardStop;
 
+// Fades to silence over `duration` seconds, then performs a -hardStop
+- (void) fadeOutAndStopWithDuration:(NSTimeInterval)duration;
+- (void) resumeFromFadeOut;
+
+// KVO-Observable
+@property (nonatomic, readonly, getter=isFadingOut) BOOL fadingOut;
+
 @property (nonatomic) double volume;
 
 @property (nonatomic, strong) NSArray<Effect *> *effects;

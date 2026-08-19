@@ -489,7 +489,11 @@
             title = NSLocalizedString(@"Show Issue", nil);
 
         } else if (playbackAction == PlaybackActionStop) {
-            title = NSLocalizedString(@"Stop", nil);
+            if ([[Player sharedInstance] isFadingOut]) {
+                title = NSLocalizedString(@"Resume", nil);
+            } else {
+                title = NSLocalizedString(@"Stop", nil);
+            }
         }
 
         [menuItem setState:state];

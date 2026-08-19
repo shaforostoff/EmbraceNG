@@ -44,6 +44,10 @@ typedef NS_ENUM(NSInteger, TrackViewAttribute) {
 
 extern NSString * const PreferencesDidChangeNotification;
 
+// In seconds
+extern const NSInteger StopFadeOutDurationNone;
+extern const NSInteger StopFadeOutDurationMaximum;
+
 
 @interface Preferences : NSObject
 
@@ -79,6 +83,9 @@ extern NSString * const PreferencesDidChangeNotification;
 @property (nonatomic) NSString *scriptHandlerName;
 @property (nonatomic) BOOL allowsAllEffects;
 @property (nonatomic) BOOL allowsPlaybackShortcuts;
+
+// In seconds
+@property (nonatomic) NSInteger stopFadeOutDuration;
 
 @property (nonatomic) KeySignatureDisplayMode keySignatureDisplayMode;
 @property (nonatomic) DuplicateStatusMode duplicateStatusMode;

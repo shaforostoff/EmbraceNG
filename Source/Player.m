@@ -12,6 +12,7 @@
 #import "HugAudioSettings.h"
 #import "HugAudioSource.h"
 #import "HugAudioFile.h"
+#import "HugUtils.h"
 
 #import <pthread.h>
 #import <signal.h>
@@ -27,6 +28,12 @@ static NSString * const sStereoBalanceKey = @"stereo-balance";
 
 static double sMaxVolume = 1.0 - (2.0 / 32767.0);
 
+// Stepped on the main thread, then smoothed by the engine's volume ramper,
+// which interpolates across each render buffer.
+static NSTimeInterval sFadeTickInterval = 1.0 / 60.0;
+
+static NSTimeInterval sResumeFadeInDuration = 0.25;
+
 
 @interface Player ()
 @property (nonatomic, strong) Track *currentTrack;
@@ -34,6 +41,7 @@ static double sMaxVolume = 1.0 - (2.0 / 32767.0);
 @property (nonatomic) NSString *timeRemainingString;
 @property (nonatomic) float percentage;
 @property (nonatomic) PlayerIssue issue;
+@property (nonatomic, getter=isFadingOut) BOOL fadingOut;
 @end
 
 
@@ -61,6 +69,14 @@ static double sMaxVolume = 1.0 - (2.0 / 32767.0);
     
     NSTimeInterval _roundedTimeElapsed;
     NSTimeInterval _roundedTimeRemaining;
+
+    NSTimer       *_fadeTimer;
+    NSTimeInterval _fadeStartTime;
+    NSTimeInterval _fadeDuration;
+    double         _fadeStartMultiplier;
+    double         _fadeEndMultiplier;
+    double         _fadeMultiplier;
+    BOOL           _fadeStopsPlayback;
 }
 
 
@@ -100,6 +116,7 @@ static double sMaxVolume = 1.0 - (2.0 / 32767.0);
         EmbraceLog(@"Player", @"-init");
 
         _volume = -1;
+        _fadeMultiplier = 1.0;
         _engine = [[HugAudioEngine alloc] init];
         
         __weak id weakSelf = self;
@@ -593,6 +610,93 @@ static OSStatus sHandleAudioDevicePropertyChanged(AudioObjectID inObjectID, UInt
 }
 
 
+- (void) _updateEngineVolume
+{
+    double graphVolume = _volume * _fadeMultiplier * sMaxVolume;
+
+    if (graphVolume > sMaxVolume) graphVolume = sMaxVolume;
+    if (graphVolume < 0) graphVolume = 0;
+
+    graphVolume = graphVolume * graphVolume * graphVolume;
+
+    [_engine updateVolume:graphVolume];
+}
+
+
+- (void) _cancelFadeTimer
+{
+    [_fadeTimer invalidate];
+    _fadeTimer = nil;
+
+    [self setFadingOut:NO];
+}
+
+
+// -hardStop deliberately doesn't call this -- raising the level while the render
+// thread drains the current source is audible.  Paths that start audio reset instead.
+//
+- (void) _resetFade
+{
+    [self _cancelFadeTimer];
+
+    if (_fadeMultiplier != 1.0) {
+        _fadeMultiplier = 1.0;
+        [self _updateEngineVolume];
+    }
+}
+
+
+- (void) _startFadeToMultiplier:(double)endMultiplier duration:(NSTimeInterval)duration stopsPlayback:(BOOL)stopsPlayback
+{
+    [self _cancelFadeTimer];
+
+    _fadeStartMultiplier = _fadeMultiplier;
+    _fadeEndMultiplier   = endMultiplier;
+    _fadeDuration        = duration;
+    _fadeStartTime       = HugGetSecondsWithHostTime(HugGetCurrentHostTime());
+    _fadeStopsPlayback   = stopsPlayback;
+
+    if (duration <= 0) {
+        [self setFadingOut:stopsPlayback];
+        [self _handleFadeTimer:nil];
+        return;
+    }
+
+    _fadeTimer = [NSTimer timerWithTimeInterval:sFadeTickInterval target:self selector:@selector(_handleFadeTimer:) userInfo:nil repeats:YES];
+    [_fadeTimer setTolerance:(sFadeTickInterval / 2)];
+
+    // Both modes, so the fade survives a tracking menu or a slider drag
+    [[NSRunLoop mainRunLoop] addTimer:_fadeTimer forMode:NSRunLoopCommonModes];
+    [[NSRunLoop mainRunLoop] addTimer:_fadeTimer forMode:NSEventTrackingRunLoopMode];
+
+    [self setFadingOut:stopsPlayback];
+}
+
+
+- (void) _handleFadeTimer:(NSTimer *)timer
+{
+    NSTimeInterval elapsed = HugGetSecondsWithHostTime(HugGetCurrentHostTime()) - _fadeStartTime;
+
+    double fraction = _fadeDuration > 0 ? (elapsed / _fadeDuration) : 1.0;
+    if (fraction < 0) fraction = 0;
+    if (fraction > 1) fraction = 1;
+
+    _fadeMultiplier = _fadeStartMultiplier + ((_fadeEndMultiplier - _fadeStartMultiplier) * fraction);
+    [self _updateEngineVolume];
+
+    if (fraction >= 1.0) {
+        BOOL stopsPlayback = _fadeStopsPlayback;
+
+        [self _cancelFadeTimer];
+
+        if (stopsPlayback) {
+            EmbraceLog(@"Player", @"Calling -hardStop, fade-out finished");
+            [self hardStop];
+        }
+    }
+}
+
+
 #pragma mark - Public Methods
 
 - (void) saveEffectState
@@ -611,6 +715,13 @@ static OSStatus sHandleAudioDevicePropertyChanged(AudioObjectID inObjectID, UInt
 - (void) playNextTrack
 {
     EmbraceLog(@"Player", @"-playNextTrack");
+
+    // Don't bring the next track in at the faded volume
+    if ([self isFadingOut]) {
+        EmbraceLog(@"Player", @"Calling -hardStop, track finished during fade-out");
+        [self hardStop];
+        return;
+    }
 
     Track *nextTrack = nil;
     NSTimeInterval padding = 0;
@@ -652,6 +763,7 @@ static OSStatus sHandleAudioDevicePropertyChanged(AudioObjectID inObjectID, UInt
 
     if (_currentTrack) return;
 
+    [self _resetFade];
     [self _reconfigureOutput];
 
     [self playNextTrack];
@@ -672,6 +784,8 @@ static OSStatus sHandleAudioDevicePropertyChanged(AudioObjectID inObjectID, UInt
     EmbraceLog(@"Player", @"-hardSkip");
 
     if (!_currentTrack) return;
+
+    [self _resetFade];
 
     Track *nextTrack = nil;
     NSTimeInterval padding = 0;
@@ -701,6 +815,8 @@ static OSStatus sHandleAudioDevicePropertyChanged(AudioObjectID inObjectID, UInt
 - (void) hardStop
 {
     EmbraceLog(@"Player", @"-hardStop");
+
+    [self _cancelFadeTimer];
 
     if (!_currentTrack) return;
 
@@ -738,6 +854,27 @@ static OSStatus sHandleAudioDevicePropertyChanged(AudioObjectID inObjectID, UInt
 
     [self _sendDistributedNotification];
     [self _clearPowerAssertions];
+}
+
+
+- (void) fadeOutAndStopWithDuration:(NSTimeInterval)duration
+{
+    EmbraceLog(@"Player", @"-fadeOutAndStopWithDuration:%g", duration);
+
+    if (!_currentTrack) return;
+    if ([self isFadingOut]) return;
+
+    [self _startFadeToMultiplier:0 duration:duration stopsPlayback:YES];
+}
+
+
+- (void) resumeFromFadeOut
+{
+    EmbraceLog(@"Player", @"-resumeFromFadeOut");
+
+    if (![self isFadingOut]) return;
+
+    [self _startFadeToMultiplier:1.0 duration:sResumeFadeInDuration stopsPlayback:NO];
 }
 
 
@@ -880,12 +1017,8 @@ static OSStatus sHandleAudioDevicePropertyChanged(AudioObjectID inObjectID, UInt
         _volume = volume;
         [[NSUserDefaults standardUserDefaults] setDouble:_volume forKey:sVolumeKey];
 
-        double graphVolume = volume * sMaxVolume;
-        if (graphVolume > sMaxVolume) graphVolume = sMaxVolume;
-        
-        graphVolume = graphVolume * graphVolume * graphVolume;
-        [_engine updateVolume:graphVolume];
-        
+        [self _updateEngineVolume];
+
         for (id<PlayerListener> listener in _listeners) {
             [listener player:self didUpdateVolume:_volume];
         }

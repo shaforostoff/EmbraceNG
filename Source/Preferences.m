@@ -7,6 +7,9 @@
 
 NSString * const PreferencesDidChangeNotification = @"PreferencesDidChange";
 
+const NSInteger StopFadeOutDurationNone    =  0;
+const NSInteger StopFadeOutDurationMaximum = 10;
+
 static NSString * const sDeviceDictionaryUIDKey  = @"DeviceUID";
 static NSString * const sDeviceDictionaryNameKey = @"Name";
 
@@ -43,6 +46,7 @@ static NSDictionary *sGetDefaultValues()
         @"scriptHandlerName":       @"",
         @"allowsAllEffects":        @NO,
         @"allowsPlaybackShortcuts": @NO,
+        @"stopFadeOutDuration":     @3,
 
         @"keySignatureDisplayMode": @( KeySignatureDisplayModeRaw ),
         @"duplicateStatusMode":     @( DuplicateStatusModeSameFile ),
@@ -281,6 +285,15 @@ static void sRegisterDefaults()
         [[NSNotificationCenter defaultCenter] postNotificationName:PreferencesDidChangeNotification object:self];
         [self _save];
     }
+}
+
+
+- (void) setStopFadeOutDuration:(NSInteger)stopFadeOutDuration
+{
+    if (stopFadeOutDuration < StopFadeOutDurationNone)    stopFadeOutDuration = StopFadeOutDurationNone;
+    if (stopFadeOutDuration > StopFadeOutDurationMaximum) stopFadeOutDuration = StopFadeOutDurationMaximum;
+
+    _stopFadeOutDuration = stopFadeOutDuration;
 }
 
 
