@@ -45,7 +45,7 @@ static NSDictionary *sGetDefaultValues()
 
         @"scriptHandlerName":       @"",
         @"allowsAllEffects":        @NO,
-        @"allowsPlaybackShortcuts": @NO,
+        @"allowsPlaybackShortcuts": @YES,
         @"stopFadeOutDuration":     @3,
 
         @"keySignatureDisplayMode": @( KeySignatureDisplayModeRaw ),

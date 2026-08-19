@@ -854,6 +854,40 @@ static NSInteger sAutoGapMaximum = 16;
 }
 
 
+- (IBAction) playSelectedTrack:(id)sender
+{
+    EmbraceLogMethod();
+
+    Player *player = [Player sharedInstance];
+    BOOL fadingOut = [player isFadingOut];
+
+    if (([self preferredPlaybackAction] != PlaybackActionPlay) && !fadingOut) {
+        return;
+    }
+
+    Track *trackToPlay = nil;
+
+    for (Track *track in [[self tracksController] selectedTracks]) {
+        if ([track trackStatus] != TrackStatusPlayed) {
+            trackToPlay = track;
+            break;
+        }
+    }
+
+    if (!trackToPlay) return;
+
+    EmbraceLog(@"SetlistController", @"Playing selected track %@", trackToPlay);
+
+    if (fadingOut) {
+        [player hardStop];
+        [self _clearConfirmStop];
+    }
+
+    [[self tracksController] markTracksAsPlayedBeforeTrack:trackToPlay];
+    [player play];
+}
+
+
 - (IBAction) increaseVolume:(id)sender
 {
     EmbraceLogMethod();

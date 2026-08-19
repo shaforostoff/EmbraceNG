@@ -708,41 +708,45 @@ static void sCollectM3UPlaylistURL(NSURL *inURL, NSMutableArray *results, NSInte
 }
 
 
-- (BOOL) _validateDeleteWithMenuItem:(NSMenuItem *)menuItem
+- (BOOL) _containsOnlyPlayedTracks:(NSArray *)tracks
+{
+    if (![tracks count]) return NO;
+
+    for (Track *track in tracks) {
+        if ([track trackStatus] != TrackStatusPlayed) return NO;
+    }
+
+    return YES;
+}
+
+
+- (BOOL) canDeleteSelectedTracks
 {
     NSArray *selectedTracks = [self selectedTracks];
 
-    BOOL containsSomething = NO;
-    BOOL containsNonQueued = NO;
-    BOOL containsAllPlayed = NO;
+    if (![selectedTracks count]) return NO;
+    if ([self _containsOnlyPlayedTracks:selectedTracks]) return YES;
 
-    if ([selectedTracks count]) {
-        containsAllPlayed = YES;
-        containsSomething = YES;
-
-        for (Track *track in selectedTracks) {
-            TrackStatus trackStatus = [track trackStatus];
-            
-            containsNonQueued = containsNonQueued || (trackStatus != TrackStatusQueued);
-            containsAllPlayed = containsAllPlayed && (trackStatus == TrackStatusPlayed);
-        }
+    for (Track *track in selectedTracks) {
+        if ([track trackStatus] != TrackStatusQueued) return NO;
     }
 
+    return YES;
+}
+
+
+- (BOOL) _validateDeleteWithMenuItem:(NSMenuItem *)menuItem
+{
     NSString *deleteTitle  = NSLocalizedString(@"Delete", nil);
     NSString *confirmTitle = NSLocalizedString(@"Delete\\U2026", nil);
 
-    if (containsAllPlayed) {
+    if ([self _containsOnlyPlayedTracks:[self selectedTracks]]) {
         [menuItem setTitle:confirmTitle];
-        return YES;
-
-    } else if (containsNonQueued || !containsSomething) {
-        [menuItem setTitle:deleteTitle];
-        return NO;
-        
     } else {
         [menuItem setTitle:deleteTitle];
-        return YES;
     }
+
+    return [self canDeleteSelectedTracks];
 }
 
 
@@ -887,10 +891,9 @@ static void sCollectM3UPlaylistURL(NSURL *inURL, NSMutableArray *results, NSInte
 
 - (void) delete:(id)sender
 {
-    BOOL needsPrompt = YES;
-    for (Track *track in [self selectedTracks]) {
-        needsPrompt = needsPrompt && ([track trackStatus] == TrackStatusPlayed);
-    }
+    if (![self canDeleteSelectedTracks]) return;
+
+    BOOL needsPrompt = [self _containsOnlyPlayedTracks:[self selectedTracks]];
 
     if (needsPrompt) {
         BOOL isSingular = [[self selectedTracks] count] == 1;
@@ -990,6 +993,34 @@ static void sCollectM3UPlaylistURL(NSURL *inURL, NSMutableArray *results, NSInte
             [track setIgnoresAutoGap:![track ignoresAutoGap]];
         }
     }
+}
+
+
+- (void) markTracksAsPlayedBeforeTrack:(Track *)trackToPlay
+{
+    NSMutableIndexSet *changedRows = [NSMutableIndexSet indexSet];
+    NSUInteger index = 0;
+
+    for (Track *track in _tracks) {
+        if (track == trackToPlay) break;
+
+        if ([track trackStatus] == TrackStatusQueued) {
+            [track setTrackStatus:TrackStatusPlayed];
+            [changedRows addIndex:index];
+        }
+
+        index++;
+    }
+
+    if (![changedRows count]) return;
+
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+        [context setDuration:0];
+
+        [[self tableView] beginUpdates];
+        [[self tableView] noteHeightOfRowsWithIndexesChanged:changedRows];
+        [[self tableView] endUpdates];
+    } completionHandler:nil];
 }
 
 

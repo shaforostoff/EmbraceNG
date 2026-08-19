@@ -5,6 +5,7 @@
 #import "TrackTableCellView.h"
 #import "Preferences.h"
 #import "TracksController.h"
+#import "SetlistController.h"
 
 
 extern NSColor * const TrackTableViewGetPlayingTextColor(void)
@@ -56,10 +57,46 @@ extern NSColor * const TrackTableViewGetRowHighlightColor(BOOL emphasized)
 }
 
 
+- (void) awakeFromNib
+{
+    [super awakeFromNib];
+
+    [self setTarget:nil];
+    [self setDoubleAction:@selector(playSelectedTrack:)];
+}
+
+
 - (void) viewDidMoveToWindow
 {
     [super viewDidMoveToWindow];
     _rowWithMouseInside = NSNotFound;
+}
+
+
+- (void) keyDown:(NSEvent *)event
+{
+    NSUInteger modifiers =
+        NSEventModifierFlagCommand |
+        NSEventModifierFlagOption  |
+        NSEventModifierFlagControl ;
+
+    NSString *characters = [event charactersIgnoringModifiers];
+    unichar character = [characters length] ? [characters characterAtIndex:0] : 0;
+
+    BOOL isReturn = (character == NSCarriageReturnCharacter) || (character == NSEnterCharacter);
+    BOOL isDelete = (character == NSDeleteCharacter)          || (character == NSBackspaceCharacter);
+
+    if (([event modifierFlags] & modifiers) == 0) {
+        if (isReturn && [NSApp sendAction:@selector(playSelectedTrack:) to:nil from:self]) {
+            return;
+        }
+
+        if (isDelete && [NSApp sendAction:@selector(delete:) to:nil from:self]) {
+            return;
+        }
+    }
+
+    [super keyDown:event];
 }
 
 

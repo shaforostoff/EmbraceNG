@@ -45,6 +45,9 @@ extern NSString *EmbraceQueuedTrackPasteboardType;
 
 @property (nonatomic, readonly) NSTimeInterval modificationTime;
 
+- (void) markTracksAsPlayedBeforeTrack:(Track *)trackToPlay;
+
+- (BOOL) canDeleteSelectedTracks;
 - (IBAction) delete:(id)sender;
 
 
