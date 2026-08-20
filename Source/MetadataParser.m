@@ -88,6 +88,65 @@ static NSInteger sGetYear(NSString *yearString)
 }
 
 
+// Normalizes a recorded/release date tag into "YYYY", "YYYY-MM", or "YYYY-MM-DD".
+// Handles the various forms seen in the wild: ID3 'TDRC' ISO-8601 timestamps,
+// M4A '?day' ("1941-03-04"), and Vorbis 'DATE' as surfaced by AudioToolbox.
+//
+static NSString *sGetDateString(NSString *dateString)
+{
+    if (![dateString length]) return nil;
+
+    NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:
+        @"([0-9]{4})(?:[-/.]([0-9]{1,2})(?:[-/.]([0-9]{1,2}))?)?" options:0 error:NULL];
+
+    NSTextCheckingResult *result = [re firstMatchInString:dateString options:0 range:NSMakeRange(0, [dateString length])];
+    if (!result) return nil;
+
+    __auto_type getComponent = ^NSInteger(NSInteger index) {
+        if (index >= (NSInteger)[result numberOfRanges]) return (NSInteger)0;
+
+        NSRange range = [result rangeAtIndex:index];
+        if (range.location == NSNotFound) return (NSInteger)0;
+
+        return [[dateString substringWithRange:range] integerValue];
+    };
+
+    NSInteger year  = getComponent(1);
+    NSInteger month = getComponent(2);
+    NSInteger day   = getComponent(3);
+
+    if (!year) return nil;
+
+    if (month < 1 || month > 12) {
+        return [NSString stringWithFormat:@"%04ld", (long)year];
+    }
+
+    if (day < 1 || day > 31) {
+        return [NSString stringWithFormat:@"%04ld-%02ld", (long)year, (long)month];
+    }
+
+    return [NSString stringWithFormat:@"%04ld-%02ld-%02ld", (long)year, (long)month, (long)day];
+}
+
+
+static void sSetDate(NSMutableDictionary *dictionary, NSString *dateString)
+{
+    NSInteger year = sGetYear(dateString);
+    if (!year) return;
+
+    [dictionary setObject:@(year) forKey:TrackKeyYear];
+
+    NSString *normalized = sGetDateString(dateString);
+    if (!normalized) return;
+
+    // A file can carry the date in more than one tag. Keep the most specific one.
+    NSString *existing = [dictionary objectForKey:TrackKeyRecordedDate];
+    if (!existing || ([normalized length] > [existing length])) {
+        [dictionary setObject:normalized forKey:TrackKeyRecordedDate];
+    }
+}
+
+
 @implementation MetadataParser {
     NSMutableDictionary *_metadata;
 }
@@ -253,9 +312,8 @@ static NSInteger sGetYear(NSString *yearString)
         } else if ((key4cc == '\00TT1') && stringValue) { // Grouping, ID3v2.2 TT1 tag
             [dictionary setObject:stringValue forKey:TrackKeyGrouping];
 
-        } else if (((key4cc == '\251day') || (key4cc == 'TDRC') || (key4cc == 'TYER') || (key4cc == '\00TYE')) && stringValue) { // Year, M4A '?day', MP3 'TDRC'/'TYER'/'TYE'
-            NSInteger year = sGetYear(stringValue);
-            if (year) [dictionary setObject:@(year) forKey:TrackKeyYear];
+        } else if (((key4cc == '\251day') || (key4cc == 'TDRC') || (key4cc == 'TDRL') || (key4cc == 'TYER') || (key4cc == '\00TYE')) && stringValue) { // Date, M4A '?day', MP3 'TDRC'/'TDRL'/'TYER'/'TYE'
+            sSetDate(dictionary, stringValue);
 
         } else if ((key4cc == '\251wrt') && stringValue) { // Composer, '?wrt'
             [dictionary setObject:stringValue forKey:TrackKeyComposer];
@@ -349,8 +407,8 @@ static NSInteger sGetYear(NSString *yearString)
             id nsValue = (__bridge id)cfValue;
             
             if ([nsValue isKindOfClass:[NSString class]]) {
-                if ([trackKey isEqualToString:TrackKeyYear]) {
-                    [_metadata setObject:@([nsValue integerValue]) forKey:TrackKeyYear];
+                if ([trackKey isEqualToString:TrackKeyRecordedDate]) {
+                    sSetDate(_metadata, nsValue);
                 } else {
                     [_metadata setObject:nsValue forKey:trackKey];
                 }
@@ -367,7 +425,10 @@ static NSInteger sGetYear(NSString *yearString)
         transfer( kAFInfoDictionary_Genre,        TrackKeyGenre      );
         transfer( kAFInfoDictionary_Tempo,        TrackKeyBPM        );
         transfer( kAFInfoDictionary_Title,        TrackKeyTitle      );
-        transfer( kAFInfoDictionary_Year,         TrackKeyYear       );
+        transfer( kAFInfoDictionary_Year,         TrackKeyRecordedDate );
+
+        // FLAC's Vorbis 'DATE' comment arrives as "recorded date" rather than "year"
+        transfer( kAFInfoDictionary_RecordedDate, TrackKeyRecordedDate );
     }
 
     if (audioInfo) {

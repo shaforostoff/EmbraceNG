@@ -311,6 +311,12 @@
 }
 
 
+- (NSString *) scriptingRecordedDate
+{
+    return [self recordedDate];
+}
+
+
 @end
 
 

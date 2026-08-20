@@ -28,3 +28,4 @@ extern NSString * const TrackKeyComments;
 extern NSString * const TrackKeyEnergyLevel;
 extern NSString * const TrackKeyGenre;
 extern NSString * const TrackKeyYear;
+extern NSString * const TrackKeyRecordedDate;

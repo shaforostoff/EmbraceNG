@@ -300,6 +300,12 @@ CA
                                                 <action selector="changeTrackAttributes:" target="494" id="Xrl-It-hlr"/>
                                             </connections>
                                         </menuItem>
+                                        <menuItem title="Recording Date" tag="14" id="Rd8-Qm-1zK">
+                                            <modifierMask key="keyEquivalentModifierMask"/>
+                                            <connections>
+                                                <action selector="changeTrackAttributes:" target="494" id="Kt4-9v-Ub2"/>
+                                            </connections>
+                                        </menuItem>
                                         <menuItem title="Year" tag="12" id="8bO-Nv-OeS">
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <connections>

@@ -281,6 +281,10 @@
 				<cocoa key="scriptingYear"/>
             </property>
 
+			<property name="recording date" access="r" code="rdat" type="text" description="The date the track was recorded/released, as YYYY, YYYY-MM, or YYYY-MM-DD.">
+				<cocoa key="scriptingRecordedDate"/>
+            </property>
+
 		</class>
 
         <class name="effect" code="fxfx" description="An effect in the Additional Effects list.">

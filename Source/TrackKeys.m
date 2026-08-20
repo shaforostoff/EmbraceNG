@@ -31,6 +31,7 @@ NSString * const TrackKeyComments         = @"comments";
 NSString * const TrackKeyEnergyLevel      = @"energyLevel";
 NSString * const TrackKeyGenre            = @"genre";
 NSString * const TrackKeyYear             = @"year";
+NSString * const TrackKeyRecordedDate     = @"recordedDate";
 
 // This is the duration as reported by -[AVURLAsset duration]
 NSString * const TrackKeyDuration = @"duration";

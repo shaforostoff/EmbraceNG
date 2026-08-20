@@ -399,6 +399,7 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
     if (_trackLoudness)    [state setObject:@(_trackLoudness)     forKey:TrackKeyTrackLoudness];
     if (_trackPeak)        [state setObject:@(_trackPeak)         forKey:TrackKeyTrackPeak];
     if (_year)             [state setObject:@(_year)              forKey:TrackKeyYear];
+    if (_recordedDate)     [state setObject:_recordedDate          forKey:TrackKeyRecordedDate];
 }
 
 

@@ -42,6 +42,7 @@ static NSDictionary *sGetDefaultValues()
         @"showsLabelDots":       @NO,
         @"showsLabelStripes":    @YES,
         @"showsYear":            @NO,
+        @"showsRecordedDate":    @NO,
 
         @"scriptHandlerName":       @"",
         @"allowsAllEffects":        @NO,
@@ -245,6 +246,9 @@ static void sRegisterDefaults()
 
     } else if (attribute == TrackViewAttributeYear) {
         return @"showsYear";
+
+    } else if (attribute == TrackViewAttributeRecordedDate) {
+        return @"showsRecordedDate";
     }
 
     return nil;

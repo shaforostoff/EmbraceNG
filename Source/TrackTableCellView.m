@@ -753,6 +753,9 @@
             } else if (attribute == TrackViewAttributeYear) {
                 NSInteger year = [track year];
                 if (year) string = [NSString stringWithFormat:@"%ld", (long)year];
+
+            } else if (attribute == TrackViewAttributeRecordedDate) {
+                string = [track recordedDate];
             }
             
             if (string) [strings addObject:string];
@@ -772,6 +775,10 @@
 
     if ([preferences showsYear]) {
         [a_2L addObject:@(TrackViewAttributeYear)];
+    }
+
+    if ([preferences showsRecordedDate]) {
+        [a_2L addObject:@(TrackViewAttributeRecordedDate)];
     }
 
     if ([preferences showsBPM]) {
