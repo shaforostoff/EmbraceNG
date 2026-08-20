@@ -74,6 +74,14 @@ extern volatile NSInteger PlayerShouldUseCrashPad;
 @property (nonatomic, readonly) float percentage;
 @property (nonatomic, readonly) PlayerIssue issue;
 
+// YES when playback was interrupted by an output device problem and will pick up
+// from -timeElapsed as soon as a usable device is available again.
+@property (nonatomic, readonly, getter=isWaitingToResume) BOOL waitingToResume;
+
+// YES while a track is loaded and the output device is ours.  Unlike -playing,
+// this is NO while waiting to resume, so the output device may be changed.
+@property (nonatomic, readonly, getter=isUsingOutputDevice) BOOL usingOutputDevice;
+
 // Playback properties
 @property (nonatomic, readonly) NSTimeInterval timeElapsed;
 @property (nonatomic, readonly) NSTimeInterval timeRemaining;

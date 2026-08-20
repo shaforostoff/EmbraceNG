@@ -43,12 +43,18 @@ static NSTimeInterval sResumeFadeInDuration = 0.25;
 @property (nonatomic) float percentage;
 @property (nonatomic) PlayerIssue issue;
 @property (nonatomic, getter=isFadingOut) BOOL fadingOut;
+@property (nonatomic, getter=isWaitingToResume) BOOL waitingToResume;
 @end
 
 
 @implementation Player {
     Track         *_currentTrack;
     NSTimeInterval _currentPadding;
+
+    // Where in the track the engine's source begins.  Non-zero after resuming a
+    // track that an output device problem interrupted.
+    NSTimeInterval _currentTrackOffset;
+    BOOL           _waitingToResume;
 
     HugAudioEngine *_engine;
     
@@ -101,6 +107,9 @@ static NSTimeInterval sResumeFadeInDuration = 0.25;
  
     if ([key isEqualToString:@"playing"]) {
         affectingKeys = @[ @"currentTrack" ];
+
+    } else if ([key isEqualToString:@"usingOutputDevice"]) {
+        affectingKeys = @[ @"currentTrack", @"waitingToResume" ];
     }
 
     if (affectingKeys) {
@@ -135,13 +144,13 @@ static NSTimeInterval sResumeFadeInDuration = 0.25;
     if (object == _outputDevice) {
         if ([keyPath isEqualToString:@"connected"]) {
             if (![_outputDevice isConnected]) {
-                EmbraceLog(@"Player", @"Calling -hardStop due to %@ -isConnected returning false", _outputDevice);
+                EmbraceLog(@"Player", @"%@ -isConnected returned false", _outputDevice);
 
-                [self hardStop];
+                [self _interruptPlaybackForResume];
                 [self _reconfigureOutput];
 
             } else {
-                if (![self isPlaying]) {
+                if (![self isPlaying] || _waitingToResume) {
                     [self _reconfigureOutput];
                 }
             }
@@ -202,6 +211,10 @@ static NSTimeInterval sResumeFadeInDuration = 0.25;
 
 - (void) _handleEngineUpdate
 {
+    // The engine is stopped while we wait for a usable output device.  Leave the
+    // interrupted position on screen instead of letting it report zeroes.
+    if (_waitingToResume) return;
+
     HugPlaybackStatus playbackStatus = [_engine playbackStatus];
     
     _leftMeterData    = [_engine leftMeterData];
@@ -223,13 +236,13 @@ static NSTimeInterval sResumeFadeInDuration = 0.25;
     } else if (playbackStatus == HugPlaybackStatusPreparing) {
         status = TrackStatusPreparing;
 
-        _timeElapsed   = -_currentPadding;
-        _timeRemaining = [_currentTrack playDuration];
+        _timeElapsed   = _currentTrackOffset - _currentPadding;
+        _timeRemaining = [_currentTrack playDuration] - _currentTrackOffset;
 
     } else {
         status = TrackStatusPlaying;
 
-        _timeElapsed   = [_engine timeElapsed];
+        _timeElapsed   = [_engine timeElapsed] + _currentTrackOffset;
         _timeRemaining = [_engine timeRemaining];
     }
 
@@ -549,9 +562,84 @@ static OSStatus sHandleAudioDevicePropertyChanged(AudioObjectID inObjectID, UInt
 
     if (issue == PlayerIssueNone) {
         EmbraceLog(@"Player", @"_reconfigureOutput successful");
+
+        if (_waitingToResume) [self _resumeAfterInterruption];
+
     } else {
         [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_reconfigureOutput_attempt) object:nil];
         [self performSelector:@selector(_reconfigureOutput_attempt) withObject:nil afterDelay:1];
+    }
+}
+
+
+// Stops the engine but keeps _currentTrack, so playback can pick up where it left
+// off once the output device is usable again.  Falls back to -hardStop whenever
+// resuming doesn't make sense.
+//
+- (void) _interruptPlaybackForResume
+{
+    if (!_currentTrack) return;
+    if (_waitingToResume) return;
+
+    // A fade-out is on its way to a stop, don't fight it
+    if ([self isFadingOut]) {
+        EmbraceLog(@"Player", @"Calling -hardStop, output was interrupted during a fade-out");
+        [self hardStop];
+        return;
+    }
+
+    NSTimeInterval offset       = _timeElapsed > 0 ? _timeElapsed : 0;
+    NSTimeInterval playDuration = [_currentTrack playDuration];
+
+    if ((playDuration > 0) && (offset > (playDuration - 1.0))) {
+        EmbraceLog(@"Player", @"Calling -hardStop, %g of %g elapsed is too close to the end to resume", offset, playDuration);
+        [self hardStop];
+        return;
+    }
+
+    EmbraceLog(@"Player", @"Interrupting %@ at %g, will resume when the output device is usable", _currentTrack, offset);
+
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_setupAndStartPlayback) object:nil];
+
+    // The auto-gap has already elapsed if we got any audio out
+    if (offset > 0) _currentPadding = 0;
+
+    _currentTrackOffset = offset;
+    [self setWaitingToResume:YES];
+
+    [_engine stopPlayback];
+
+    // -_handleEngineUpdate is a no-op from here on, so drop the stale meters
+    // ourselves and give listeners one last tick to clear them.
+    _leftMeterData = _rightMeterData = nil;
+
+    for (id<PlayerListener> listener in _listeners) {
+        [listener playerDidTick:self];
+    }
+
+    [self _sendDistributedNotification];
+}
+
+
+- (void) _resumeAfterInterruption
+{
+    if (!_waitingToResume) return;
+    [self setWaitingToResume:NO];
+
+    if (!_currentTrack) return;
+
+    EmbraceLog(@"Player", @"Resuming %@ at %g", _currentTrack, _currentTrackOffset);
+
+    // Ease back in rather than snapping to full level mid-track
+    _fadeMultiplier = 0;
+    [self _updateEngineVolume];
+
+    [self _setupAndStartPlayback];
+
+    if (_currentTrack) {
+        [self _startFadeToMultiplier:1.0 duration:sResumeFadeInDuration stopsPlayback:NO];
+    } else {
+        [self _resetFade];
     }
 }
 
@@ -586,6 +674,8 @@ static OSStatus sHandleAudioDevicePropertyChanged(AudioObjectID inObjectID, UInt
         return;
     }
 
+    NSTimeInterval offset = _currentTrackOffset;
+
     NSURL *fileURL = [track internalURL];
     if (!fileURL) {
         EmbraceLog(@"Player", @"No URL for %@!", track);
@@ -612,7 +702,7 @@ static OSStatus sHandleAudioDevicePropertyChanged(AudioObjectID inObjectID, UInt
 
     [self _updateLoudnessAndPreAmp];
 
-    if (![_engine playAudioFile:file startTime:[track startTime] stopTime:[track stopTime] padding:padding]) {
+    if (![_engine playAudioFile:file startTime:([track startTime] + offset) stopTime:[track stopTime] padding:padding]) {
         EmbraceLog(@"Player", @"Couldn't play %@", file);
         [self hardStop];
     }
@@ -829,6 +919,8 @@ static OSStatus sHandleAudioDevicePropertyChanged(AudioObjectID inObjectID, UInt
 
     [self _cancelFadeTimer];
 
+    [self setWaitingToResume:NO];
+
     if (!_currentTrack) return;
 
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_setupAndStartPlayback) object:nil];
@@ -953,7 +1045,8 @@ static OSStatus sHandleAudioDevicePropertyChanged(AudioObjectID inObjectID, UInt
         _currentTrack = currentTrack;
         [_currentTrack setTrackStatus:TrackStatusPreparing];
 
-        _timeElapsed = 0;
+        _timeElapsed        = 0;
+        _currentTrackOffset = 0;
     }
 }
 
@@ -1040,6 +1133,12 @@ static OSStatus sHandleAudioDevicePropertyChanged(AudioObjectID inObjectID, UInt
 - (BOOL) isPlaying
 {
     return _currentTrack != nil;
+}
+
+
+- (BOOL) isUsingOutputDevice
+{
+    return (_currentTrack != nil) && !_waitingToResume;
 }
 
 

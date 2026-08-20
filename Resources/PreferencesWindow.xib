@@ -86,7 +86,7 @@
                     </popUpButtonCell>
                     <connections>
                         <action selector="changeMainDevice:" target="-2" id="Qiq-qm-dsr"/>
-                        <binding destination="-2" name="enabled" keyPath="self.player.playing" id="Dmn-6v-qlY">
+                        <binding destination="-2" name="enabled" keyPath="self.player.usingOutputDevice" id="Dmn-6v-qlY">
                             <dictionary key="options">
                                 <string key="NSValueTransformerName">NSNegateBoolean</string>
                             </dictionary>
@@ -117,7 +117,7 @@
                                 <integer key="NSNullPlaceholder" value="-1"/>
                             </dictionary>
                         </binding>
-                        <binding destination="-2" name="enabled" keyPath="self.player.playing" id="E80-aO-vUJ">
+                        <binding destination="-2" name="enabled" keyPath="self.player.usingOutputDevice" id="E80-aO-vUJ">
                             <dictionary key="options">
                                 <string key="NSValueTransformerName">NSNegateBoolean</string>
                             </dictionary>
@@ -151,7 +151,7 @@
                                 <integer key="NSNullPlaceholder" value="-1"/>
                             </dictionary>
                         </binding>
-                        <binding destination="-2" name="enabled" keyPath="self.player.playing" id="yYs-qf-ftu">
+                        <binding destination="-2" name="enabled" keyPath="self.player.usingOutputDevice" id="yYs-qf-ftu">
                             <dictionary key="options">
                                 <string key="NSValueTransformerName">NSNegateBoolean</string>
                             </dictionary>
@@ -210,7 +210,7 @@
                                 <integer key="NSNullPlaceholder" value="-1"/>
                             </dictionary>
                         </binding>
-                        <binding destination="-2" name="enabled" keyPath="self.player.playing" id="kPL-Ax-eu6">
+                        <binding destination="-2" name="enabled" keyPath="self.player.usingOutputDevice" id="kPL-Ax-eu6">
                             <dictionary key="options">
                                 <string key="NSValueTransformerName">NSNegateBoolean</string>
                             </dictionary>
@@ -234,7 +234,7 @@
                                 <integer key="NSNullPlaceholder" value="-1"/>
                             </dictionary>
                         </binding>
-                        <binding destination="-2" name="enabled" keyPath="self.player.playing" id="Q9M-Un-6zq">
+                        <binding destination="-2" name="enabled" keyPath="self.player.usingOutputDevice" id="Q9M-Un-6zq">
                             <dictionary key="options">
                                 <string key="NSValueTransformerName">NSNegateBoolean</string>
                             </dictionary>
@@ -258,7 +258,7 @@
                         <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
                     </textFieldCell>
                     <connections>
-                        <binding destination="-2" name="hidden" keyPath="self.player.playing" id="c5P-4V-udc">
+                        <binding destination="-2" name="hidden" keyPath="self.player.usingOutputDevice" id="c5P-4V-udc">
                             <dictionary key="options">
                                 <string key="NSValueTransformerName">NSNegateBoolean</string>
                             </dictionary>

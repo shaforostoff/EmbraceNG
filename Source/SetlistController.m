@@ -267,6 +267,11 @@ static NSInteger sAutoGapMaximum = 16;
             tooltip = NSLocalizedString(@"The selected output device could not be configured", nil);
         }
 
+        if ([player isWaitingToResume]) {
+            NSString *format = NSLocalizedString(@"%@ (playback will resume)", nil);
+            tooltip = [NSString stringWithFormat:format, tooltip];
+        }
+
     } else if (action == PlaybackActionStop) {
         if ([player isFadingOut]) {
             icon     = SetlistButtonIconPlay;
@@ -747,6 +752,14 @@ static NSInteger sAutoGapMaximum = 16;
     } else {
         messageText = NSLocalizedString(@"The selected output device could not be configured.", nil);
         otherButton = NSLocalizedString(@"Show Preferences", nil);
+    }
+
+    if ([[Player sharedInstance] isWaitingToResume]) {
+        NSString *resumeText = NSLocalizedString(@"Playback will resume from where it was interrupted.", nil);
+
+        informativeText = informativeText ?
+            [informativeText stringByAppendingFormat:@"\n\n%@", resumeText] :
+            resumeText;
     }
 
     NSAlert *alert = [[NSAlert alloc] init];
