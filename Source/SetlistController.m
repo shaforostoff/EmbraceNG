@@ -1221,7 +1221,7 @@ static NSInteger sAutoGapMaximum = 16;
     
     [alert setMessageText:messageText];
     [alert setAlertStyle:NSAlertStyleCritical];
-    [alert setInformativeText:NSLocalizedString(@"You can prevent this by quitting other applications when using Embrace, or by giving Embrace exclusive access in Preferences.", nil)];
+    [alert setInformativeText:NSLocalizedString(@"You can prevent this by quitting other applications when using EmbraceNG, or by giving EmbraceNG exclusive access in Preferences.", nil)];
     [alert addButtonWithTitle:NSLocalizedString(@"OK", nil)];
     [alert addButtonWithTitle:NSLocalizedString(@"Show Preferences", nil)];
 

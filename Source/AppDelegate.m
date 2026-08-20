@@ -294,7 +294,7 @@
     if ([[Player sharedInstance] isPlaying]) {
         NSAlert *alert = [[NSAlert alloc] init];
 
-        [alert setMessageText:NSLocalizedString(@"Quit Embrace", nil)];
+        [alert setMessageText:NSLocalizedString(@"Quit EmbraceNG", nil)];
         [alert setInformativeText:NSLocalizedString(@"Music is currently playing. Are you sure you want to quit?", nil)];
         [alert addButtonWithTitle:NSLocalizedString(@"Quit",   nil)];
         [alert addButtonWithTitle:NSLocalizedString(@"Cancel", nil)];

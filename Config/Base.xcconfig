@@ -1,4 +1,4 @@
-BUNDLE_IDENTIFIER_PREFIX = com.ricciadams.opensource
+BUNDLE_IDENTIFIER_PREFIX = com.shaforostoff.opensource
 
 #include? "../Private/Private.xcconfig"
 

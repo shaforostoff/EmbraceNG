@@ -357,7 +357,7 @@
 		5582F7ED18A385570046A24B /* LoudnessMeasurer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = LoudnessMeasurer.h; path = Source/LoudnessMeasurer.h; sourceTree = "<group>"; };
 		558513C518794A2600C268E3 /* EffectsController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = EffectsController.h; path = Source/EffectsController.h; sourceTree = SOURCE_ROOT; };
 		558513C618794A2600C268E3 /* EffectsController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = EffectsController.m; path = Source/EffectsController.m; sourceTree = SOURCE_ROOT; };
-		558DC07F187785BC00C85770 /* Embrace.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Embrace.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		558DC07F187785BC00C85770 /* EmbraceNG.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EmbraceNG.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		558DC082187785BC00C85770 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
 		558DC085187785BC00C85770 /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
 		558DC087187785BC00C85770 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
@@ -704,7 +704,7 @@
 		558DC080187785BC00C85770 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				558DC07F187785BC00C85770 /* Embrace.app */,
+				558DC07F187785BC00C85770 /* EmbraceNG.app */,
 				5559E61218DFD42500D61019 /* Crash Pad.app */,
 				5514B63F1CDEE64200F238B7 /* EmbraceWorker.xpc */,
 			);
@@ -1023,9 +1023,9 @@
 			productReference = 5559E61218DFD42500D61019 /* Crash Pad.app */;
 			productType = "com.apple.product-type.application";
 		};
-		558DC07E187785BC00C85770 /* Embrace */ = {
+		558DC07E187785BC00C85770 /* EmbraceNG */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 558DC0B0187785BC00C85770 /* Build configuration list for PBXNativeTarget "Embrace" */;
+			buildConfigurationList = 558DC0B0187785BC00C85770 /* Build configuration list for PBXNativeTarget "EmbraceNG" */;
 			buildPhases = (
 				55224BEC18A855E900407B46 /* rcbump */,
 				558DC07B187785BC00C85770 /* Sources */,
@@ -1042,9 +1042,9 @@
 				552EC02D18DFD543000B82AB /* PBXTargetDependency */,
 				5514B6491CDEE64200F238B7 /* PBXTargetDependency */,
 			);
-			name = Embrace;
-			productName = Embrace;
-			productReference = 558DC07F187785BC00C85770 /* Embrace.app */;
+			name = EmbraceNG;
+			productName = EmbraceNG;
+			productReference = 558DC07F187785BC00C85770 /* EmbraceNG.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -1073,7 +1073,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 558DC07A187785BC00C85770 /* Build configuration list for PBXProject "Embrace" */;
+			buildConfigurationList = 558DC07A187785BC00C85770 /* Build configuration list for PBXProject "EmbraceNG" */;
 			compatibilityVersion = "Xcode 3.2";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -1086,7 +1086,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				558DC07E187785BC00C85770 /* Embrace */,
+				558DC07E187785BC00C85770 /* EmbraceNG */,
 				5559E61118DFD42500D61019 /* CrashPad */,
 				5514B63E1CDEE64200F238B7 /* EmbraceWorker */,
 			);
@@ -1482,7 +1482,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Profile;
 		};
-		558DC07A187785BC00C85770 /* Build configuration list for PBXProject "Embrace" */ = {
+		558DC07A187785BC00C85770 /* Build configuration list for PBXProject "EmbraceNG" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				558DC0AE187785BC00C85770 /* Debug */,
@@ -1493,7 +1493,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Profile;
 		};
-		558DC0B0187785BC00C85770 /* Build configuration list for PBXNativeTarget "Embrace" */ = {
+		558DC0B0187785BC00C85770 /* Build configuration list for PBXNativeTarget "EmbraceNG" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				558DC0B1187785BC00C85770 /* Debug */,

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
 
-<dictionary title="Embrace Terminology" xmlns:xi="http://www.w3.org/2003/XInclude">
+<dictionary title="EmbraceNG Terminology" xmlns:xi="http://www.w3.org/2003/XInclude">
 
 	<suite name="Standard Suite" code="????" description="Common classes and commands for all applications.">
 		<command name="quit" code="aevtquit" description="Quit the application.">
@@ -87,7 +87,7 @@
     </suite>
 
 
-	<suite name="Embrace Suite" code="embr" description="Classes for the Embrace application.">
+	<suite name="EmbraceNG Suite" code="embr" description="Classes for the EmbraceNG application.">
 		<enumeration name="saveable file format" code="savf">
 			<enumerator name="text" code="text" description="text format">
 				<cocoa string-value="public.text"/>
@@ -102,7 +102,7 @@
             <access-group identifier="*"/>
         </command>
       
-        <class-extension extends="application" description="The Embrace application.">
+        <class-extension extends="application" description="The EmbraceNG application.">
             <element access="r" description="The tracks in the set list" type="track">
                 <cocoa key="scriptingTracks"/>
             </element>
@@ -135,7 +135,7 @@
                 <cocoa key="scriptingMinimumSilence"/>
             </property>
 
-            <property name="player state" access="r" code="plst" type="playerState" description="Is Embrace playing or stopped?">
+            <property name="player state" access="r" code="plst" type="playerState" description="Is EmbraceNG playing or stopped?">
                 <cocoa key="scriptingPlayerState"/>
             </property>
 
@@ -150,10 +150,10 @@
         </class-extension>
 
         <enumeration name="playerState" code="plst">
-            <enumerator name="stopped" code="pls0" description="Embrace is currently stopped.">
+            <enumerator name="stopped" code="pls0" description="EmbraceNG is currently stopped.">
                 <cocoa integer-value="0"/>
             </enumerator>
-            <enumerator name="playing" code="pls1" description="Embrace is currently playing.">
+            <enumerator name="playing" code="pls1" description="EmbraceNG is currently playing.">
                 <cocoa integer-value="1"/>
             </enumerator>
         </enumeration>
@@ -308,14 +308,14 @@
         </class>
 	</suite>
 
-    <suite name="Embrace Event Handler Suite" code="embr" description="Commands that are executed as Embrace event handlers.">
-        <event name="metadata available" code="embrhe00" description="This handler is called when Embrace parses a track's metadata.">
+    <suite name="EmbraceNG Event Handler Suite" code="embr" description="Commands that are executed as EmbraceNG event handlers.">
+        <event name="metadata available" code="embrhe00" description="This handler is called when EmbraceNG parses a track's metadata.">
             <cocoa name="MetadataAvailable" class="EventHandlerCommand"/>
             <parameter code="hetr" name="for" description="The track that was parsed." type="track">
             </parameter>
         </event>
 
-        <event name="current track changed" code="embrhe01" description="This handler is called when Embrace changes the current track.">
+        <event name="current track changed" code="embrhe01" description="This handler is called when EmbraceNG changes the current track.">
             <cocoa name="CurrentTrackChanged" class="EventHandlerCommand"/>
         </event>
     </suite>

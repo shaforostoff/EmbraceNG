@@ -74,7 +74,7 @@ static NSURL *sGetRelaunchURL(NSURL *inURL)
 
     NSAlert *alert = [[NSAlert alloc] init];
 
-    [alert setMessageText:    NSLocalizedString(@"Embrace encountered a critical error.", nil)];
+    [alert setMessageText:    NSLocalizedString(@"EmbraceNG encountered a critical error.", nil)];
     [alert setInformativeText:NSLocalizedString(@"Your current song will continue to play, but you must reopen the app to play other songs or access other features.", nil)];
     [alert setIcon:icon];
 

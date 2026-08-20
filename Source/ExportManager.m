@@ -35,7 +35,7 @@
     
     NSString *dateString = [formatter stringFromDate:date];
 
-    NSString *suggestedNameFormat = NSLocalizedString(@"Embrace (%@)", nil);
+    NSString *suggestedNameFormat = NSLocalizedString(@"EmbraceNG (%@)", nil);
     NSString *suggestedName = [NSString stringWithFormat:suggestedNameFormat, dateString];
 
     return suggestedName;

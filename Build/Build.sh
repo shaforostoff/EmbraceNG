@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Builds a Release Embrace.app for running on this Mac.
+# Builds a Release EmbraceNG.app for running on this Mac.
 #
 # Build/Archive.sh is the distribution path: it exports a signed archive, sends it
 # to Apple's notary service and uploads the result.  This script stops short of all
@@ -21,8 +21,8 @@ PROJECT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 OUTPUT_DIR="${1:-$HOME/Desktop}"
 
 CONFIGURATION="Release"
-DERIVED_DATA="${TMPDIR:-/tmp/}Embrace-Build"
-DSTROOT=$(mktemp -d /tmp/Embrace-Build.XXXXXX)
+DERIVED_DATA="${TMPDIR:-/tmp/}EmbraceNG-Build"
+DSTROOT=$(mktemp -d /tmp/EmbraceNG-Build.XXXXXX)
 
 trap 'rm -rf "$DSTROOT"' EXIT
 
@@ -51,8 +51,8 @@ fi
 cd "$PROJECT_DIR"
 
 xcodebuild install \
-    -project Embrace.xcodeproj \
-    -target Embrace \
+    -project EmbraceNG.xcodeproj \
+    -target EmbraceNG \
     -configuration "$CONFIGURATION" \
     DSTROOT="$DSTROOT" \
     SYMROOT="$DERIVED_DATA/Products" \
@@ -64,10 +64,10 @@ xcodebuild install \
     DEVELOPMENT_TEAM="" \
     PROVISIONING_PROFILE_SPECIFIER=""
 
-APP_FILE=$(find "$DSTROOT" -maxdepth 3 -name "Embrace.app" | head -1)
+APP_FILE=$(find "$DSTROOT" -maxdepth 3 -name "EmbraceNG.app" | head -1)
 
 if [ -z "$APP_FILE" ]; then
-    echo "Build finished but no Embrace.app was produced." >&2
+    echo "Build finished but no EmbraceNG.app was produced." >&2
     exit 1
 fi
 
@@ -75,14 +75,14 @@ fi
 # Move into place and verify
 
 mkdir -p "$OUTPUT_DIR"
-rm -rf "$OUTPUT_DIR/Embrace.app"
-ditto "$APP_FILE" "$OUTPUT_DIR/Embrace.app"
+rm -rf "$OUTPUT_DIR/EmbraceNG.app"
+ditto "$APP_FILE" "$OUTPUT_DIR/EmbraceNG.app"
 
-codesign --verify --deep --strict "$OUTPUT_DIR/Embrace.app"
+codesign --verify --deep --strict "$OUTPUT_DIR/EmbraceNG.app"
 
-BUILD_NUMBER=$(defaults read "$OUTPUT_DIR/Embrace.app/Contents/Info.plist" CFBundleVersion)
-VERSION=$(defaults read "$OUTPUT_DIR/Embrace.app/Contents/Info.plist" CFBundleShortVersionString)
+BUILD_NUMBER=$(defaults read "$OUTPUT_DIR/EmbraceNG.app/Contents/Info.plist" CFBundleVersion)
+VERSION=$(defaults read "$OUTPUT_DIR/EmbraceNG.app/Contents/Info.plist" CFBundleShortVersionString)
 
 echo
-echo "Built Embrace $VERSION ($BUILD_NUMBER)"
-echo "$OUTPUT_DIR/Embrace.app"
+echo "Built EmbraceNG $VERSION ($BUILD_NUMBER)"
+echo "$OUTPUT_DIR/EmbraceNG.app"

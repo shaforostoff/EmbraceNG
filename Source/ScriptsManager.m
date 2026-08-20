@@ -48,7 +48,7 @@ static NSArray *sGetScriptFileTypes()
 
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_handlePreferencesDidChange:) name:PreferencesDidChangeNotification object:nil];
 
-        // This is public API, use "com.iccir.Embrace" even if our bundle ID is "com.ricciadams.opensource.Embrace"
+        // This is public API, use "com.iccir.Embrace" even if our bundle ID is "com.shaforostoff.opensource.EmbraceNG"
         [[NSDistributedNotificationCenter defaultCenter] addObserver:self selector:@selector(_handlePlayerUpdate:) name:@"com.iccir.Embrace.playerUpdate" object:nil];
     }
     
