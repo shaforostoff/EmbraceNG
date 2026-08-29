@@ -8,12 +8,18 @@
 #
 # Usage: Build/Build.sh [output-directory]     (defaults to ~/Desktop)
 #
-# Set SIGN_IDENTITY to choose a signing identity.  When it is unset, the first
-# installed "Developer ID Application" identity is used, falling back to an ad-hoc
-# signature.  Ad-hoc signatures change on every build, so macOS re-asks for the
-# app's Automation and file access permissions each time -- prefer a real identity
-# if you have one.  Neither signature is timestamped; that is only needed for
-# notarization, so use Archive.sh when building something to hand out.
+# Signing is ad-hoc by default: no certificate, no team identifier.  Set
+# SIGN_IDENTITY to sign with one instead -- either "auto" for the first installed
+# "Developer ID Application" identity, or the full name of the one to use.
+#
+# Ad-hoc signatures change on every build, so macOS re-asks for the app's
+# Automation and file access permissions each time; a real identity is worth
+# setting if you have one to hand.
+#
+# Signing with a real identity also asks Apple's timestamp server for a secure
+# timestamp, which notarization requires and an ad-hoc signature cannot carry.  So
+# a build made with SIGN_IDENTITY can be handed straight to Package.sh --notarize,
+# at the cost of needing the network; an ad-hoc build stays offline and local.
 
 set -e
 
@@ -29,15 +35,26 @@ trap 'rm -rf "$DSTROOT"' EXIT
 # ----------------------------------
 # Pick a signing identity
 
-if [ -z "$SIGN_IDENTITY" ]; then
+if [ "$SIGN_IDENTITY" = "auto" ]; then
     SIGN_IDENTITY=$(security find-identity -v -p codesigning |
         sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -1)
+
+    if [ -z "$SIGN_IDENTITY" ]; then
+        echo "SIGN_IDENTITY=auto, but no Developer ID Application identity is installed." >&2
+        exit 1
+    fi
 fi
 
-if [ -z "$SIGN_IDENTITY" ]; then
+# Apple rejects a signature without a secure timestamp, so a real identity always
+# gets one.  Ad-hoc signing cannot carry a timestamp at all -- codesign refuses the
+# combination -- which is why the flag is turned off rather than simply left out.
+
+if [ -z "$SIGN_IDENTITY" ] || [ "$SIGN_IDENTITY" = "-" ]; then
     SIGN_IDENTITY="-"
-    echo "No Developer ID Application identity found, signing ad-hoc."
+    TIMESTAMP_FLAG="--timestamp=none"
+    echo "Signing ad-hoc. Set SIGN_IDENTITY to sign with a certificate."
 else
+    TIMESTAMP_FLAG="--timestamp"
     echo "Signing with: $SIGN_IDENTITY"
 fi
 
@@ -60,7 +77,7 @@ xcodebuild install \
     SHARED_PRECOMPS_DIR="$DERIVED_DATA/PrecompiledHeaders" \
     CODE_SIGN_STYLE="Manual" \
     CODE_SIGN_IDENTITY="$SIGN_IDENTITY" \
-    OTHER_CODE_SIGN_FLAGS="--timestamp=none" \
+    OTHER_CODE_SIGN_FLAGS="$TIMESTAMP_FLAG" \
     DEVELOPMENT_TEAM="" \
     PROVISIONING_PROFILE_SPECIFIER=""
 
