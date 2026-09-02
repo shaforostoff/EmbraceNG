@@ -29,8 +29,9 @@ OUTPUT_DIR="${1:-$HOME/Desktop}"
 CONFIGURATION="Release"
 DERIVED_DATA="${TMPDIR:-/tmp/}EmbraceNG-Build"
 DSTROOT=$(mktemp -d /tmp/EmbraceNG-Build.XXXXXX)
+BUILD_LOG=$(mktemp /tmp/EmbraceNG-Build-Log.XXXXXX)
 
-trap 'rm -rf "$DSTROOT"' EXIT
+trap 'rm -rf "$DSTROOT" "$BUILD_LOG"' EXIT
 
 # ----------------------------------
 # Pick a signing identity
@@ -67,19 +68,70 @@ fi
 
 cd "$PROJECT_DIR"
 
-xcodebuild install \
-    -project EmbraceNG.xcodeproj \
-    -target EmbraceNG \
-    -configuration "$CONFIGURATION" \
-    DSTROOT="$DSTROOT" \
-    SYMROOT="$DERIVED_DATA/Products" \
-    OBJROOT="$DERIVED_DATA/Intermediates" \
-    SHARED_PRECOMPS_DIR="$DERIVED_DATA/PrecompiledHeaders" \
-    CODE_SIGN_STYLE="Manual" \
-    CODE_SIGN_IDENTITY="$SIGN_IDENTITY" \
-    OTHER_CODE_SIGN_FLAGS="$TIMESTAMP_FLAG" \
-    DEVELOPMENT_TEAM="" \
-    PROVISIONING_PROFILE_SPECIFIER=""
+run_xcodebuild ()
+{
+    xcodebuild install \
+        -project EmbraceNG.xcodeproj \
+        -target EmbraceNG \
+        -configuration "$CONFIGURATION" \
+        DSTROOT="$DSTROOT" \
+        SYMROOT="$DERIVED_DATA/Products" \
+        OBJROOT="$DERIVED_DATA/Intermediates" \
+        SHARED_PRECOMPS_DIR="$DERIVED_DATA/PrecompiledHeaders" \
+        CODE_SIGN_STYLE="Manual" \
+        CODE_SIGN_IDENTITY="$SIGN_IDENTITY" \
+        OTHER_CODE_SIGN_FLAGS="$TIMESTAMP_FLAG" \
+        DEVELOPMENT_TEAM="" \
+        PROVISIONING_PROFILE_SPECIFIER=""
+}
+
+# Apple's timestamp server turns requests away when it is asked for several in
+# quick succession, and this build asks three times in a row -- the app, the XPC
+# service and the nested Crash Pad.  It surfaces as "The timestamp service is not
+# available" against whichever signature happened to be third, and it fails the
+# whole build, so the build is simply asked for again.  Xcode redoes only the
+# signing that did not finish, which takes seconds rather than another full build.
+#
+# Success is read off xcodebuild's own banner: the exit status is out of reach
+# behind the tee that keeps the build's output on screen while it runs.
+
+BUILD_ATTEMPTS=4
+ATTEMPT=1
+RETRY_DELAY=10
+
+while : ; do
+    set +e
+    run_xcodebuild 2>&1 | tee "$BUILD_LOG"
+    set -e
+
+    if grep -q "^\*\* INSTALL SUCCEEDED \*\*" "$BUILD_LOG"; then
+        break
+    fi
+
+    if ! grep -q "The timestamp service is not available" "$BUILD_LOG"; then
+        echo "Build failed." >&2
+        exit 1
+    fi
+
+    if [ "$ATTEMPT" -ge "$BUILD_ATTEMPTS" ]; then
+        echo >&2
+        echo "Apple's timestamp server refused $BUILD_ATTEMPTS times. Try again later, or" >&2
+        echo "build without a certificate -- an ad-hoc build asks it for nothing." >&2
+        exit 1
+    fi
+
+    ATTEMPT=$((ATTEMPT + 1))
+
+    # Backed off rather than retried at a fixed interval: a run of builds close
+    # together gets refused for longer than a few seconds at a time.
+
+    echo
+    echo "Apple's timestamp server was busy. Retrying ($ATTEMPT of $BUILD_ATTEMPTS)" \
+         "in ${RETRY_DELAY}s."
+
+    sleep "$RETRY_DELAY"
+    RETRY_DELAY=$((RETRY_DELAY * 2))
+done
 
 APP_FILE=$(find "$DSTROOT" -maxdepth 3 -name "EmbraceNG.app" | head -1)
 
