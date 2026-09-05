@@ -21,6 +21,6 @@ Hence, unless otherwise noted, all files in this project are licensed under both
 # EmbraceNG
 Integrates Declick and Dehum from https://github.com/shaforostoff/shellacfilters as well as Parametric EQ.
 
-Improved behaviour when external soundcard is suddenly disconnected during playback (I have seen this happening during a DJ set): after soundcard is replugged, the app continues playing the music from where it was. With original Embrace you'll have to start the track from beginning (and there is no way to skip to the middle of the song).
+Improved behaviour when external soundcard is suddenly disconnected during playback (I have seen this happening during a DJ set): after soundcard is replugged, the app continues playing the music from where it was interrupted. With original Embrace you'll have to start the track from beginning (and there is no way to skip to the middle of the song).
 
 Keyboard control has been improved, automatic fade out when Stop is pressed (press the button one more time if it was accidental; set fadeout time to 0 in settings to get the old behaviour).
