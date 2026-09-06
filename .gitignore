@@ -1,0 +1,14 @@
+.DS_Store
+
+# Local credentials and signing configuration -- never commit.
+Private/
+
+# In-tree build output.
+Build/Debug/
+Build/Release/
+Build/*.build/
+Build/SharedPrecompiledHeaders/
+Build/XCBuildData/
+
+# Xcode per-user state.
+xcuserdata/

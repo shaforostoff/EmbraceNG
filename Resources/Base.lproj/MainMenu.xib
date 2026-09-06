@@ -490,14 +490,13 @@ CA
                     <modifierMask key="keyEquivalentModifierMask"/>
                     <menu key="submenu" title="Help" systemMenu="help" id="491">
                         <items>
-                            <menuItem title="Send Feedback" id="492">
+                            <menuItem title="View Website of EmbraceNG" id="Ng1-Wb-St1">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
-                                    <action selector="sendFeedback:" target="494" id="RUA-mJ-gdv"/>
+                                    <action selector="viewEmbraceNGWebsite:" target="494" id="Ng1-Wb-St2"/>
                                 </connections>
                             </menuItem>
-                            <menuItem isSeparatorItem="YES" id="h8X-Gz-NjX"/>
-                            <menuItem title="View Website" id="P5t-fr-so8">
+                            <menuItem title="View Website of original Embrace" id="P5t-fr-so8">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="viewWebsite:" target="494" id="XFv-d6-R0O"/>

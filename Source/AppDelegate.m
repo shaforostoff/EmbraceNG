@@ -70,8 +70,6 @@
 - (IBAction) showPreferences:(id)sender;
 - (IBAction) showCurrentTrack:(id)sender;
 
-- (IBAction) sendFeedback:(id)sender;
-
 - (IBAction) openAcknowledgements:(id)sender;
 
 - (IBAction) showDebugWindow:(id)sender;
@@ -886,7 +884,6 @@
         [alert setMessageText:NSLocalizedString(@"Crash Report Sent", nil)];
         [alert setInformativeText:NSLocalizedString(@"Thank you for your crash report.  If you have any additional information regarding the crash, please contact me.", nil)];
         [alert addButtonWithTitle:NSLocalizedString(@"OK", nil)];
-        [alert addButtonWithTitle:NSLocalizedString(@"Contact", nil)];
 
         return alert;
     };
@@ -895,11 +892,7 @@
 
     if (okToSend) {
         [CrashReportSender sendCrashReportsWithCompletionHandler:^(BOOL didSend) {
-            NSModalResponse response = [makeAlertTwo() runModal];
-            
-            if (response == NSAlertSecondButtonReturn) {
-                [self sendFeedback:nil];
-            }
+            [makeAlertTwo() runModal];
         }];
     }
 }
@@ -927,7 +920,6 @@
             [alert setMessageText:NSLocalizedString(@"Logs Sent", nil)];
             [alert setInformativeText:NSLocalizedString(@"Thank you for your logs.  If you have any additional information, please contact me.", nil)];
             [alert addButtonWithTitle:NSLocalizedString(@"OK", nil)];
-            [alert addButtonWithTitle:NSLocalizedString(@"Contact", nil)];
         } else {
             [alert setMessageText:NSLocalizedString(@"Error", nil)];
             [alert setInformativeText:NSLocalizedString(@"Your logs could not be sent.  Please try again.", nil)];
@@ -941,11 +933,7 @@
 
     if (okToSend) {
         [CrashReportSender sendLogsWithCompletionHandler:^(BOOL didSend) {
-            NSModalResponse response = [makeAlertTwo(didSend) runModal];
-            
-            if (response == NSAlertSecondButtonReturn) {
-                [self sendFeedback:nil];
-            }
+            [makeAlertTwo(didSend) runModal];
         }];
     }
 }
@@ -983,11 +971,11 @@
 }
 
 
-- (IBAction) sendFeedback:(id)sender
+- (IBAction) viewEmbraceNGWebsite:(id)sender
 {
     EmbraceLogMethod();
 
-    NSURL *url = [NSURL URLWithString:@"http://www.ricciadams.com/contact/"];
+    NSURL *url = [NSURL URLWithString:@"https://github.com/shaforostoff/EmbraceNG"];
     [[NSWorkspace sharedWorkspace] openURL:url];
 }
 

@@ -58,6 +58,7 @@
 		5549FCA61F8AF767009006D2 /* CoreServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5549FCA51F8AF767009006D2 /* CoreServices.framework */; };
 		554B733F18E402E1001E154E /* Log.m in Sources */ = {isa = PBXBuildFile; fileRef = 554B733E18E402E1001E154E /* Log.m */; };
 		554F3C7418BA08B900E9EA7E /* Acknowledgements.rtf in Resources */ = {isa = PBXBuildFile; fileRef = 554F3C7318BA08B900E9EA7E /* Acknowledgements.rtf */; };
+		55C7ED1702000000000000C2 /* Credits.rtf in Resources */ = {isa = PBXBuildFile; fileRef = 55C7ED1701000000000000C1 /* Credits.rtf */; };
 		554FCB9D1DFCF0E900DE697E /* MaskView.m in Sources */ = {isa = PBXBuildFile; fileRef = 554FCB9C1DFCF0E900DE697E /* MaskView.m */; };
 		5555F5501B4D19220092A8C2 /* HugProtectedBuffer.m in Sources */ = {isa = PBXBuildFile; fileRef = 5555F54F1B4D19220092A8C2 /* HugProtectedBuffer.m */; };
 		555953E921B6834D0032EE54 /* HugMeterData.m in Sources */ = {isa = PBXBuildFile; fileRef = 555953E821B6834D0032EE54 /* HugMeterData.m */; };
@@ -278,6 +279,7 @@
 		554B733D18E402E1001E154E /* Log.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Log.h; path = Source/Log.h; sourceTree = "<group>"; };
 		554B733E18E402E1001E154E /* Log.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = Log.m; path = Source/Log.m; sourceTree = "<group>"; };
 		554F3C7318BA08B900E9EA7E /* Acknowledgements.rtf */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.rtf; name = Acknowledgements.rtf; path = Resources/Acknowledgements.rtf; sourceTree = SOURCE_ROOT; };
+		55C7ED1701000000000000C1 /* Credits.rtf */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.rtf; name = Credits.rtf; path = Resources/Credits.rtf; sourceTree = SOURCE_ROOT; };
 		554FCB9B1DFCF0E900DE697E /* MaskView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = MaskView.h; path = Source/MaskView.h; sourceTree = SOURCE_ROOT; };
 		554FCB9C1DFCF0E900DE697E /* MaskView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = MaskView.m; path = Source/MaskView.m; sourceTree = SOURCE_ROOT; };
 		5555F54E1B4D19220092A8C2 /* HugProtectedBuffer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = HugProtectedBuffer.h; path = Source/HugProtectedBuffer.h; sourceTree = "<group>"; };
@@ -784,6 +786,7 @@
 				55E9932C274A2ACA00112370 /* Embrace.icns */,
 				556B496320CF772D00A4E83E /* Assets.xcassets */,
 				554F3C7318BA08B900E9EA7E /* Acknowledgements.rtf */,
+				55C7ED1701000000000000C1 /* Credits.rtf */,
 				55A0B16E1890A80400866F04 /* Test Sounds */,
 				55F7ABDB18AF1BE8006B6FBB /* Safe Presets */,
 				558DC0CA1877868400C85770 /* Info.plist */,
@@ -1130,6 +1133,7 @@
 				550D882C18AC3C6200CC7E3A /* rate_88.m4a in Resources */,
 				55A0B1741890A81900866F04 /* test_g.m4a in Resources */,
 				554F3C7418BA08B900E9EA7E /* Acknowledgements.rtf in Resources */,
+				55C7ED1702000000000000C2 /* Credits.rtf in Resources */,
 				55F7ABDA18AF1B41006B6FBB /* AUHipass.aupreset in Resources */,
 				5560980E1B45EEF8008516C3 /* TrackTableCellView.xib in Resources */,
 				55169D531F9ACBFA003779FA /* test_3s_g4.m4a in Resources */,
