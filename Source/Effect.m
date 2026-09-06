@@ -37,7 +37,15 @@ NSString * const EffectDidDeallocNotification = @"EffectDidDealloc";
         return NO;
     }
 
-    [audioUnit setFullState:fullState];
+    // Apple's N-band EQ editor crashes if the band count moves underneath it,
+    // so a preset never gets to change it.
+    NSDictionary *stateToApply = EmbraceAudioUnitFullStateByPreservingBandCount(fullState, audioUnit);
+
+    if (stateToApply != fullState) {
+        EmbraceLog(@"Effect", @"Preserving band count for %@ across state change", [_type name]);
+    }
+
+    [audioUnit setFullState:stateToApply];
 
     return YES;
 }

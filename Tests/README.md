@@ -124,3 +124,71 @@ Across 250 fuzzed presets it accepts ~181 and none of them crash, in all three
 allocator configurations. Of the ~69 it rejects, roughly a third would in fact
 have been harmless -- an acceptable trade, since those blobs are corrupt either
 way and the cost of being wrong in the other direction is a crash on stage.
+
+---
+
+# AUNBandEQ editor tests
+
+`NBandEQViewTests.m` covers what the headless suite cannot: Apple's *editor*,
+`AUNBandEQView`, which `EditSystemEffectController` embeds whenever the user
+opens the Parametric EQ window.
+
+```bash
+Tests/run-nbandeq-view-tests.sh
+```
+
+These need a window server session -- they load the view, host it in an
+offscreen window and really draw it -- so they will not run over a plain SSH
+login. Each case runs in its own exec'd child, because two of them are known
+Apple crashes and would otherwise take the whole run down. `fork` without
+`exec` is not usable here: AppKit cannot be used in a forked child, and a bare
+fork produces convincing-looking crashes that have nothing to do with the EQ.
+
+## Results on macOS 14.8.8
+
+Fine: parameter edits under a live editor, out-of-range and non-finite values,
+200 preset loads with the window open, and audio rendering (4M+ slices) while
+the editor is driven. Two crashes, both reachable from the app's UI, both now
+mitigated:
+
+### 1. Band count changing under a live editor
+
+Three or four changes are enough. AppKit traps on a rect computed by
+`-[CAAppleEQGraphView updateGraphFrame]` via `-[CAFilterControl update]`, from
+controls the band-count change has already invalidated. A single change is
+always safe; only repetition crashes. Ordinary parameter editing never does.
+
+The obvious repair -- rebuild the editor after the change -- does not work: an
+audio unit hands out its view controller once, and a second
+`-requestViewControllerWithCompletionHandler:` never completes.
+
+**Mitigation:** `EmbraceAudioUnitFullStateByPreservingBandCount()` holds the
+band count at whatever the unit already has, so a preset cannot move it.
+`Effect.m` applies this to every state it installs. This costs nothing in
+practice: the app never varies the count, and AUNBandEQ exposes all its bands
+regardless, leaving unused ones bypassed. Verified at 200 preset loads.
+
+Reachable from **Load Preset…** and **Restore Default Values**
+([EditEffectController.m:133](../Source/EditEffectController.m:133) and
+[:161](../Source/EditEffectController.m:161)) with the EQ window open.
+
+### 2. Closing the editor window while releasing the audio unit
+
+Closing the window tears down the backing layer that CoreAudioKit still has a
+deferred update queued against; releasing the unit removes what would otherwise
+keep it alive. **Either alone is survivable -- together they crash.** That
+combination is exactly what `-closeEditControllerForEffect:` did: `[controller
+close]`, followed immediately by the caller releasing the effect.
+
+**Mitigation:** order the window out instead of closing it, which leaves the
+layer intact for the pending update to land on. Verified over 12 cycles.
+
+Reachable by selecting the Parametric EQ in the Effects window and deleting it
+while its editor is open ([EffectsController.m:324](../Source/EffectsController.m:324)).
+
+## What these tests do not cover
+
+No synthesized mouse input. Dragging band handles on the curve runs AppKit
+tracking loops, which are difficult to drive deterministically from a test and
+easy to hang. If a corruption bug lives in the drag handling specifically,
+nothing here would find it.

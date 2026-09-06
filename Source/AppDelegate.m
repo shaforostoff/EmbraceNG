@@ -464,7 +464,13 @@
 
     for (EditEffectController *controller in _editEffectControllers) {
         if ([controller effect] == effect) {
-            [controller close];
+            // -close, not -orderOut:, tears down the window's backing layer
+            // while CoreAudioKit still has a deferred update queued against
+            // it.  That alone is survivable, but the effect -- and with it the
+            // audio unit -- is released moments later by the caller, and the
+            // combination crashes inside AppKit.  Ordering the window out
+            // leaves the layer intact for the update to land on.
+            [[controller window] orderOut:self];
             if (controller) [toRemove addObject:controller];
         }
     }

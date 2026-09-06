@@ -20,3 +20,18 @@
 
 extern BOOL EmbraceAudioUnitFullStateIsWellFormed(NSDictionary *fullState,
                                                   AudioComponentDescription componentDescription);
+
+
+// Apple's AUNBandEQ editor (AUNBandEQView) traps inside AppKit when the band
+// count changes underneath it: -[CAAppleEQGraphView updateGraphFrame] recomputes
+// geometry from controls the change has already invalidated.  Three or four
+// changes are enough, and the editor cannot be rebuilt to recover -- an audio
+// unit only ever hands out one view controller.
+//
+// Applying state with the band count held at whatever the unit already has
+// avoids it entirely, and costs nothing in practice: the app never varies the
+// count, and AUNBandEQ exposes all its bands regardless, leaving unused ones
+// bypassed.  Returns fullState unchanged for anything but Apple's N-band EQ.
+
+extern NSDictionary *EmbraceAudioUnitFullStateByPreservingBandCount(NSDictionary *fullState,
+                                                                    AUAudioUnit *audioUnit);

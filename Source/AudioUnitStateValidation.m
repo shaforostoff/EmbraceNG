@@ -47,3 +47,34 @@ BOOL EmbraceAudioUnitFullStateIsWellFormed(NSDictionary *fullState,
 
     return (sHeaderLength + ((NSUInteger)count * sRecordLength)) == length;
 }
+
+
+static NSString * const sNumberOfBandsKey = @"numberOfBands";
+
+
+NSDictionary *EmbraceAudioUnitFullStateByPreservingBandCount(NSDictionary *fullState,
+                                                             AUAudioUnit *audioUnit)
+{
+    if (![fullState isKindOfClass:[NSDictionary class]] || !audioUnit) return fullState;
+
+    AudioComponentDescription acd = [audioUnit componentDescription];
+
+    if (acd.componentManufacturer != kAudioUnitManufacturer_Apple ||
+        acd.componentSubType      != kAudioUnitSubType_NBandEQ)
+    {
+        return fullState;
+    }
+
+    id incoming = [fullState objectForKey:sNumberOfBandsKey];
+    if (![incoming isKindOfClass:[NSNumber class]]) return fullState;
+
+    id current = [[audioUnit fullState] objectForKey:sNumberOfBandsKey];
+    if (![current isKindOfClass:[NSNumber class]]) return fullState;
+
+    if ([incoming unsignedIntValue] == [current unsignedIntValue]) return fullState;
+
+    NSMutableDictionary *preserved = [fullState mutableCopy];
+    [preserved setObject:current forKey:sNumberOfBandsKey];
+
+    return preserved;
+}
