@@ -5,6 +5,8 @@
 #import "EffectType.h"
 #import "Player.h"
 #import "EditEffectController.h"
+#import "AudioUnitStateValidation.h"
+#import "Log.h"
 
 static NSString *sNameKey = @"name";
 static NSString *sInfoKey = @"info";
@@ -20,6 +22,25 @@ NSString * const EffectDidDeallocNotification = @"EffectDidDealloc";
 }
 
 @dynamic hasCustomView;
+
+
+// Everything that reaches -setFullState: comes from a file: a saved set list,
+// a user-chosen .aupreset, or our own bundle.  Apple's units crash on a
+// malformed blob rather than rejecting it, so screen it here.
+//
+- (BOOL) _applyFullState:(NSDictionary *)fullState toAudioUnit:(AUAudioUnit *)audioUnit
+{
+    if (!fullState || !audioUnit) return NO;
+
+    if (!EmbraceAudioUnitFullStateIsWellFormed(fullState, [audioUnit componentDescription])) {
+        EmbraceLog(@"Effect", @"Refusing malformed state for %@, keeping current values", [_type name]);
+        return NO;
+    }
+
+    [audioUnit setFullState:fullState];
+
+    return YES;
+}
 
 
 + (instancetype) effectWithStateDictionary:(NSDictionary *)dictionary
@@ -52,7 +73,7 @@ NSString * const EffectDidDeallocNotification = @"EffectDidDealloc";
         NSString *defaultPresetPath = [[NSBundle mainBundle] pathForResource:[[self type] name] ofType:@"aupreset"];
         if (defaultPresetPath) {
             NSDictionary *defaultPreset = [NSDictionary dictionaryWithContentsOfFile:defaultPresetPath];
-            [_audioUnit setFullState:defaultPreset];
+            [self _applyFullState:defaultPreset toAudioUnit:_audioUnit];
         }
 
         _defaultFullState = [_audioUnit fullState];
@@ -104,12 +125,16 @@ NSString * const EffectDidDeallocNotification = @"EffectDidDealloc";
         NSError *error = nil;
         
         NSDictionary *fullState = [NSPropertyListSerialization propertyListWithData:info options:NSPropertyListImmutable format:NULL error:&error];
-        if (fullState) [_audioUnit setFullState:fullState];
-        
+
         if (!fullState || error) {
             self = nil;
             return nil;
         }
+
+        // A set list whose stored state is malformed still names a real
+        // effect, so keep the effect in the chain at its default settings
+        // rather than dropping it and silently changing the signal path.
+        [self _applyFullState:fullState toAudioUnit:_audioUnit];
     }
 
     return self;
@@ -126,7 +151,7 @@ NSString * const EffectDidDeallocNotification = @"EffectDidDealloc";
 
 - (void) _setFullState:(NSDictionary *)fullState
 {
-    [_audioUnit setFullState:fullState];
+    if (![self _applyFullState:fullState toAudioUnit:_audioUnit]) return;
 
     // As of 10.14, -setFullState: appears to not update the AUParameter's -value, which
     // is likely a caching bug in Apple's code. To get around this, create a fake AUAudioUnit
@@ -137,7 +162,7 @@ NSString * const EffectDidDeallocNotification = @"EffectDidDealloc";
     AUAudioUnit *fakeUnit = [[AUAudioUnit alloc] initWithComponentDescription:[_audioUnit componentDescription] error:&error];
 
     if (!error) {
-        [fakeUnit setFullState:fullState];
+        [self _applyFullState:fullState toAudioUnit:fakeUnit];
         
         for (AUParameter *fakeParameter in [[fakeUnit parameterTree] allParameters]) {
             AUParameter *realParameter = [[_audioUnit parameterTree] parameterWithAddress:[fakeParameter address]];

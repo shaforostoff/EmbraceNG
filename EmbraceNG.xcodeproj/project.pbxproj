@@ -21,6 +21,7 @@
 		550D883818ACD5F800CC7E3A /* TrackTableView.m in Sources */ = {isa = PBXBuildFile; fileRef = 550D883718ACD5F800CC7E3A /* TrackTableView.m */; };
 		550DDB9121C67E8100769F32 /* HugAudioDevice.m in Sources */ = {isa = PBXBuildFile; fileRef = 550DDB9021C67E8100769F32 /* HugAudioDevice.m */; };
 		55102B431B53564500308F55 /* EffectAdditions.m in Sources */ = {isa = PBXBuildFile; fileRef = 55102B421B53564500308F55 /* EffectAdditions.m */; };
+		55AA01011B53564500308F55 /* AudioUnitStateValidation.m in Sources */ = {isa = PBXBuildFile; fileRef = 55AA01001B53564500308F55 /* AudioUnitStateValidation.m */; };
 		55102B451B537AF400308F55 /* EditGraphicEQEffectWindow.xib in Resources */ = {isa = PBXBuildFile; fileRef = 55102B441B537AF400308F55 /* EditGraphicEQEffectWindow.xib */; };
 		55102B481B537BF000308F55 /* EditGraphicEQEffectController.m in Sources */ = {isa = PBXBuildFile; fileRef = 55102B471B537BF000308F55 /* EditGraphicEQEffectController.m */; };
 		55102B4B1B537C2500308F55 /* EditSystemEffectController.m in Sources */ = {isa = PBXBuildFile; fileRef = 55102B4A1B537C2500308F55 /* EditSystemEffectController.m */; };
@@ -234,6 +235,8 @@
 		550DDB9021C67E8100769F32 /* HugAudioDevice.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = HugAudioDevice.m; path = Source/HugAudioDevice.m; sourceTree = "<group>"; };
 		55102B411B53564500308F55 /* EffectAdditions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = EffectAdditions.h; path = Source/EffectAdditions.h; sourceTree = "<group>"; };
 		55102B421B53564500308F55 /* EffectAdditions.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = EffectAdditions.m; path = Source/EffectAdditions.m; sourceTree = "<group>"; };
+		55AA01001B53564500308F55 /* AudioUnitStateValidation.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = AudioUnitStateValidation.m; path = Source/AudioUnitStateValidation.m; sourceTree = "<group>"; };
+		55AA01021B53564500308F55 /* AudioUnitStateValidation.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = AudioUnitStateValidation.h; path = Source/AudioUnitStateValidation.h; sourceTree = "<group>"; };
 		55102B441B537AF400308F55 /* EditGraphicEQEffectWindow.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; name = EditGraphicEQEffectWindow.xib; path = Resources/EditGraphicEQEffectWindow.xib; sourceTree = SOURCE_ROOT; };
 		55102B461B537BF000308F55 /* EditGraphicEQEffectController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = EditGraphicEQEffectController.h; path = Source/EditGraphicEQEffectController.h; sourceTree = SOURCE_ROOT; };
 		55102B471B537BF000308F55 /* EditGraphicEQEffectController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = EditGraphicEQEffectController.m; path = Source/EditGraphicEQEffectController.m; sourceTree = SOURCE_ROOT; };
@@ -861,6 +864,8 @@
 				55BC0B051877F19400D84481 /* Effect.m */,
 				55102B411B53564500308F55 /* EffectAdditions.h */,
 				55102B421B53564500308F55 /* EffectAdditions.m */,
+				55AA01021B53564500308F55 /* AudioUnitStateValidation.h */,
+				55AA01001B53564500308F55 /* AudioUnitStateValidation.m */,
 				55F3B7B41877908900E8FEC8 /* Track.h */,
 				55F3B7B51877908900E8FEC8 /* Track.m */,
 				552C9E4D1883EBA40041C160 /* Preferences.h */,
@@ -1291,6 +1296,7 @@
 				55CF2786187A23BD0042C92A /* MusicAppManager.m in Sources */,
 				55A708B118A715C1007BD7C0 /* DragSongsHereView.m in Sources */,
 				55102B431B53564500308F55 /* EffectAdditions.m in Sources */,
+				55AA01011B53564500308F55 /* AudioUnitStateValidation.m in Sources */,
 				552C9E4C1883888E0041C160 /* PreferencesController.m in Sources */,
 				550C63C81FE6666E007841BC /* ScriptFile.m in Sources */,
 				5537D75E19CEBA7300DE8117 /* CurrentTrackController.m in Sources */,
