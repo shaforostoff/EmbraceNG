@@ -1,4 +1,6 @@
-# AUNBandEQ tests
+# Tests
+
+## AUNBandEQ tests
 
 `NBandEQTests.m` exercises Apple's parametric EQ (`kAudioUnitSubType_NBandEQ`),
 which `Source/EffectAdditions.m` registers as `AppleParametricEQ`.
@@ -264,3 +266,40 @@ and the app needs no mitigation for it. It is recorded because the accessor is
 unguarded: anything else that reaches it with a stale index -- a band count that
 moved, say -- throws the same way. `IsReachableByMouse()` keeps the suite to
 controls a mouse could actually hit.
+
+
+## Parametric EQ core
+
+`ParaEQCoreTests.cpp` checks `Source/paraeq_core.{h,cpp}`, the portable core
+behind the app's own Parametric Equalizer. Framework-free and headless, because
+the core is: it is meant to go upstream beside declick and dehum, so anything it
+needed from AudioToolbox would belong in the wrapper instead.
+
+```bash
+Tests/run-paraeq-core-tests.sh   # -O2 as shipped, then -O0 with asan + ubsan
+```
+
+43 checks, all passing on macOS 14.8.8. The interesting ones:
+
+- **measured vs predicted.** Sines are run through a real `Channel` and the gain
+  it actually applies is compared against `magnitudeDb()`, within 0.06 dB at
+  nine frequencies. This is what keeps the curve a host draws honest: without
+  it, both sides could agree on the same wrong formula.
+- **cookbook sections land where the formulas say.** Peaking gain at its centre,
+  shelf gain at DC and Nyquist, half gain at the shelf corner, -3.01 dB at the
+  high-pass corner at both 12 and 24 dB/oct, and -12.30 / -24.10 dB an octave
+  below it, which is what makes the two-stage version Butterworth rather than
+  merely fourth order.
+- **interpolated coefficients stay inside the stability triangle.** 49 pairs of
+  the most distant settings the controls allow, 1001 interpolants each. The
+  glide's safety is an argument rather than a measurement -- the stable region
+  is convex, so a straight line between two stable settings cannot leave it --
+  and this pins the argument to the code.
+
+One finding came out of writing them. The glide originally stepped the
+coefficients once per 32-sample sub-block, and *that is audible*: a jump in `b0`
+puts `b0*x` straight into the output, so each boundary left a step about 35 dB
+below the signal, which the second difference of the output shows as 2.2e-2
+against the 4.1e-4 the tone itself carries. Stepping every sample instead brings
+it to 4.6e-4 -- the tone's own curvature -- and costs nothing in the state a
+settled equaliser is in for all but 300 ms after a knob stops moving.
