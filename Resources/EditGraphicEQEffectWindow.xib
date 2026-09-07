@@ -7,6 +7,7 @@
     <objects>
         <customObject id="-2" userLabel="File's Owner" customClass="EditGraphicEQEffectController">
             <connections>
+                <outlet property="actionsMenu" destination="OhG-da-Xk9" id="bTq-4h-Zd8"/>
                 <outlet property="backgroundView" destination="p7p-gj-VAV" id="g0A-w3-geT"/>
                 <outlet property="graphicEQView" destination="y1v-uw-fLy" id="hEm-bY-Dbg"/>
                 <outlet property="window" destination="5mm-8W-u52" id="RhH-N2-3zC"/>

@@ -157,9 +157,9 @@ NSString * const EffectDidDeallocNotification = @"EffectDidDealloc";
 
 #pragma mark - Private Methods
 
-- (void) _setFullState:(NSDictionary *)fullState
+- (BOOL) _setFullState:(NSDictionary *)fullState
 {
-    if (![self _applyFullState:fullState toAudioUnit:_audioUnit]) return;
+    if (![self _applyFullState:fullState toAudioUnit:_audioUnit]) return NO;
 
     // As of 10.14, -setFullState: appears to not update the AUParameter's -value, which
     // is likely a caching bug in Apple's code. To get around this, create a fake AUAudioUnit
@@ -177,17 +177,19 @@ NSString * const EffectDidDeallocNotification = @"EffectDidDealloc";
             [realParameter setValue:[fakeParameter value] originator:NULL];
         }
     }
+
+    return YES;
 }
 
 
 #pragma mark - Public Methods
 
-- (void) loadAudioPresetAtFileURL:(NSURL *)fileURL
+- (BOOL) loadAudioPresetAtFileURL:(NSURL *)fileURL
 {
     NSDictionary *dictionary = [NSDictionary dictionaryWithContentsOfURL:fileURL];
-    if (!dictionary) return;
+    if (!dictionary) return NO;
 
-    [self _setFullState:dictionary];
+    return [self _setFullState:dictionary];
 }
 
 

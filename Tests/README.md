@@ -170,9 +170,10 @@ band count at whatever the unit already has, so a preset cannot move it.
 practice: the app never varies the count, and AUNBandEQ exposes all its bands
 regardless, leaving unused ones bypassed. Verified at 200 preset loads.
 
-Reachable from **Load Preset…** and **Restore Default Values**
-([EditEffectController.m:133](../Source/EditEffectController.m:133) and
-[:161](../Source/EditEffectController.m:161)) with the EQ window open.
+Reachable from **Load Preset…**, a recent preset in the same menu, and
+**Restore Default Values**
+([EditEffectController.m:265](../Source/EditEffectController.m:265) and
+[:332](../Source/EditEffectController.m:332)) with the EQ window open.
 
 ### 2. Closing the editor window while releasing the audio unit
 
@@ -347,3 +348,62 @@ there is now a check that every segment label fits in its segment. And the view
 painted no background of its own, relying on the window behind it -- which works
 in the app and fails anywhere else, because every colour in the view is a
 semantic one and white-in-dark-mode text on an unpainted view is invisible.
+
+
+---
+
+# Recent presets in the effect menu
+
+`PresetMenuTests.m` covers the list of recently used presets each effect
+editor's "..." menu shows under **Save Preset…**.
+
+```bash
+Tests/run-preset-menu-tests.sh   # needs a window server session; it opens menus
+```
+
+35 checks, all passing on macOS 14.8.8. It loads the two real nibs --
+`EditSystemEffectWindow` and `EditGraphicEQEffectWindow` -- with stand-in
+`EditEffectController` subclasses as File's Owner, so it stays clear of
+CoreAudioKit and the window resizing dance while still exercising the
+connection the feature added. A nib sets its outlets with `-setValue:forKey:`,
+which throws for a key the owner does not have, so loading one at all is what
+proves `actionsMenu` resolves. `Could not find image named 'FlattenTemplate'`
+on the way past is expected: the asset catalog is not in the harness's bundle.
+
+What the checks pin down:
+
+- **entries land between `Save Preset…` and the separator the xib already has
+  there**, so the menu keeps the shape Interface Builder gives it, and a rebuild
+  removes only the items it added last time. Menu shapes are compared as whole
+  arrays of titles, separators included, which is what catches an item inserted
+  one place off.
+- **most-recent-first, capped at seven, no duplicates.** Nine presets are
+  minted and loaded; seven remain, newest first. Loading one again moves it to
+  the front instead of listing it twice.
+- **kept apart per effect type.** An `.aupreset` only means anything to the unit
+  that wrote it, so the list is keyed on `EffectType.fullName`. A second effect
+  does not inherit the first's presets, and a second window onto the *same* type
+  shows what the first has been loading.
+- **a preset the effect refuses is not remembered.** `-loadAudioPresetAtFileURL:`
+  now reports whether the state was actually installed, which is what keeps a
+  blob the validator rejects -- or a file that is not a preset at all -- out of
+  the list and off the menu.
+- **a preset whose file has gone stays in the list but off the menu**, so an
+  unmounted volume hides its presets rather than forgetting them.
+
+## Only opening a menu updates it
+
+The one thing worth recording. `-[NSMenu update]` does **not** call
+`menuNeedsUpdate:`, and neither does `-performKeyEquivalent:` or
+`-numberOfItems`; only a real tracking session does. A test built on `-update`
+would have passed against a menu that never refreshed, which is exactly the bug
+this feature could have shipped with.
+
+So these checks open the toolbar's `NSPopUpButton` for real, with an Escape
+queued through `-[NSApplication postEvent:atStart:]` first -- the modal tracking
+session pulls from the same event queue and cancels immediately. `alarm(90)`
+guards the run, so a tracking loop that ever stops taking the hint is reported
+as a watchdog kill rather than hanging.
+
+The harness writes to a defaults domain named after its own executable, not the
+app's, and clears it on the way out; it asserts both.
