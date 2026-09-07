@@ -84,6 +84,9 @@
 		DEC1DE000000000000000014 /* ParameterFormView.m in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000008 /* ParameterFormView.m */; };
 		DEC1DE000000000000000012 /* dehum_core.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000004 /* dehum_core.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
 		DEC1DE000000000000000013 /* RestorationAudioUnit.mm in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000006 /* RestorationAudioUnit.mm */; settings = {COMPILER_FLAGS = "-O2"; }; };
+		DEC1DE000000000000000041 /* paraeq_core.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000032 /* paraeq_core.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
+		DEC1DE000000000000000042 /* ParametricEQAudioUnit.mm in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000034 /* ParametricEQAudioUnit.mm */; settings = {COMPILER_FLAGS = "-O2"; }; };
+		DEC1DE000000000000000043 /* ParametricEQView.mm in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000036 /* ParametricEQView.mm */; };
 		556B496420CF772D00A4E83E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 556B496320CF772D00A4E83E /* Assets.xcassets */; };
 		55717BF5187EA65400213213 /* SetlistButton.m in Sources */ = {isa = PBXBuildFile; fileRef = 55717BF4187EA65400213213 /* SetlistButton.m */; };
 		55717BF8187EAB8C00213213 /* SetlistSlider.m in Sources */ = {isa = PBXBuildFile; fileRef = 55717BF7187EAB8C00213213 /* SetlistSlider.m */; };
@@ -326,6 +329,12 @@
 		DEC1DE000000000000000004 /* dehum_core.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = dehum_core.cpp; path = Source/dehum_core.cpp; sourceTree = "<group>"; };
 		DEC1DE000000000000000005 /* RestorationAudioUnit.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RestorationAudioUnit.h; path = Source/RestorationAudioUnit.h; sourceTree = "<group>"; };
 		DEC1DE000000000000000006 /* RestorationAudioUnit.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = RestorationAudioUnit.mm; path = Source/RestorationAudioUnit.mm; sourceTree = "<group>"; };
+		DEC1DE000000000000000031 /* paraeq_core.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = paraeq_core.h; path = Source/paraeq_core.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000032 /* paraeq_core.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = paraeq_core.cpp; path = Source/paraeq_core.cpp; sourceTree = "<group>"; };
+		DEC1DE000000000000000033 /* ParametricEQAudioUnit.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ParametricEQAudioUnit.h; path = Source/ParametricEQAudioUnit.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000034 /* ParametricEQAudioUnit.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ParametricEQAudioUnit.mm; path = Source/ParametricEQAudioUnit.mm; sourceTree = "<group>"; };
+		DEC1DE000000000000000035 /* ParametricEQView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ParametricEQView.h; path = Source/ParametricEQView.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000036 /* ParametricEQView.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ParametricEQView.mm; path = Source/ParametricEQView.mm; sourceTree = "<group>"; };
 		556B496320CF772D00A4E83E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = Resources/Assets.xcassets; sourceTree = "<group>"; };
 		556EAED81FEA011B00EF68C3 /* Worker_Release.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Worker_Release.xcconfig; path = Config/Combined/Worker_Release.xcconfig; sourceTree = "<group>"; };
 		556EAED91FEA011B00EF68C3 /* Worker_Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Worker_Debug.xcconfig; path = Config/Combined/Worker_Debug.xcconfig; sourceTree = "<group>"; };
@@ -636,6 +645,19 @@
 			name = Restoration;
 			sourceTree = "<group>";
 		};
+		DEC1DE000000000000000022 /* Parametric EQ */ = {
+			isa = PBXGroup;
+			children = (
+				DEC1DE000000000000000031 /* paraeq_core.h */,
+				DEC1DE000000000000000032 /* paraeq_core.cpp */,
+				DEC1DE000000000000000033 /* ParametricEQAudioUnit.h */,
+				DEC1DE000000000000000034 /* ParametricEQAudioUnit.mm */,
+				DEC1DE000000000000000035 /* ParametricEQView.h */,
+				DEC1DE000000000000000036 /* ParametricEQView.mm */,
+			);
+			name = "Parametric EQ";
+			sourceTree = "<group>";
+		};
 		556ACE30187BB3F800AED4BC /* Wrapped C++ */ = {
 			isa = PBXGroup;
 			children = (
@@ -689,6 +711,7 @@
 				551A79492C8E3E13006BB34A /* Crash Report */,
 				556ACE30187BB3F800AED4BC /* Wrapped C++ */,
 				DEC1DE000000000000000021 /* Restoration */,
+				DEC1DE000000000000000022 /* Parametric EQ */,
 				5514B6401CDEE64200F238B7 /* Worker */,
 				5514B6661CDF3B9A00F238B7 /* Shared */,
 				55BC0B1C1878D7FA00D84481 /* Model */,
@@ -1248,6 +1271,9 @@
 				DEC1DE000000000000000014 /* ParameterFormView.m in Sources */,
 				DEC1DE000000000000000012 /* dehum_core.cpp in Sources */,
 				DEC1DE000000000000000013 /* RestorationAudioUnit.mm in Sources */,
+				DEC1DE000000000000000041 /* paraeq_core.cpp in Sources */,
+				DEC1DE000000000000000042 /* ParametricEQAudioUnit.mm in Sources */,
+				DEC1DE000000000000000043 /* ParametricEQView.mm in Sources */,
 				557C439A1D615CDC000184D8 /* TipArrowFloater.m in Sources */,
 				555953F521B8B6FB0032EE54 /* HugAudioSource.m in Sources */,
 				552C9E4F1883EBA40041C160 /* Preferences.m in Sources */,

@@ -4,6 +4,10 @@
 #import <Foundation/Foundation.h>
 #import <AudioToolbox/AudioToolbox.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Apple's audio units do not validate the opaque parameter blob inside a saved
 // -fullState dictionary.  The blob is laid out as
 //
@@ -35,3 +39,7 @@ extern BOOL EmbraceAudioUnitFullStateIsWellFormed(NSDictionary *fullState,
 
 extern NSDictionary *EmbraceAudioUnitFullStateByPreservingBandCount(NSDictionary *fullState,
                                                                     AUAudioUnit *audioUnit);
+
+#ifdef __cplusplus
+}
+#endif

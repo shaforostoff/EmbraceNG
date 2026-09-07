@@ -29,6 +29,7 @@ static EffectCategory sGetCategory(NSString *name)
         @"EmbraceDeclick":        @( EffectCategoryRestoration ),
         @"EmbraceDehum":          @( EffectCategoryRestoration ),
 
+        @"EmbraceParametricEQ":   @( EffectCategoryEqualizers ),
         @"EmbraceGraphicEQ10":    @( EffectCategoryEqualizers ),
         @"EmbraceGraphicEQ31":    @( EffectCategoryEqualizers ),
         @"AppleParametricEQ":     @( EffectCategoryEqualizers ),

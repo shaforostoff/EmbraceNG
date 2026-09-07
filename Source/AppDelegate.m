@@ -10,6 +10,7 @@
 #import "EditGraphicEQEffectController.h"
 #import "EditSystemEffectController.h"
 #import "RestorationAudioUnit.h"
+#import "ParametricEQAudioUnit.h"
 #import "CurrentTrackController.h"
 #import "TracksController.h"
 #import "Preferences.h"
@@ -127,6 +128,7 @@
     [ScriptsManager sharedInstance];
     
     EmbraceRegisterRestorationAudioUnits();
+    EmbraceRegisterParametricEQAudioUnit();
     [EffectType embrace_registerMappedEffects];
 
     TelemetrySetBasePath(GetApplicationSupportDirectory());
@@ -312,7 +314,8 @@
     for (Effect *effect in [[Player sharedInstance] effects]) {
         NSString *effectName = [[effect type] name];
 
-        if ([effectName isEqualToString:EmbraceMappedEffect10BandEQ] ||
+        if ([effectName isEqualToString:EmbraceEffectParametricEQ] ||
+            [effectName isEqualToString:EmbraceMappedEffect10BandEQ] ||
             [effectName isEqualToString:EmbraceMappedEffect31BandEQ] ||
             [effectName isEqualToString:EmbraceMappedEffectAppleParametricEQ] ||
             [effectName isEqualToString:@"AUGraphicEQ"] ||

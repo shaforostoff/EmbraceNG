@@ -7,8 +7,9 @@ NSString * const EmbraceMappedEffect10BandEQ          = @"EmbraceGraphicEQ10";
 NSString * const EmbraceMappedEffect31BandEQ          = @"EmbraceGraphicEQ31";
 NSString * const EmbraceMappedEffectAppleParametricEQ = @"AppleParametricEQ";
 
-NSString * const EmbraceEffectDeclick = @"EmbraceDeclick";
-NSString * const EmbraceEffectDehum   = @"EmbraceDehum";
+NSString * const EmbraceEffectDeclick     = @"EmbraceDeclick";
+NSString * const EmbraceEffectDehum       = @"EmbraceDehum";
+NSString * const EmbraceEffectParametricEQ = @"EmbraceParametricEQ";
 
 
 typedef struct {
@@ -97,8 +98,9 @@ static ParametricEQBand sParametricEQBands[] = {
         EmbraceMappedEffect31BandEQ:          NSLocalizedString(@"31-band Graphic Equalizer", nil),
         EmbraceMappedEffectAppleParametricEQ: NSLocalizedString(@"Parametric Equalizer (Apple)", nil),
 
-        EmbraceEffectDeclick: NSLocalizedString(@"Declick", nil),
-        EmbraceEffectDehum:   NSLocalizedString(@"Dehum", nil),
+        EmbraceEffectDeclick:      NSLocalizedString(@"Declick", nil),
+        EmbraceEffectDehum:        NSLocalizedString(@"Dehum", nil),
+        EmbraceEffectParametricEQ: NSLocalizedString(@"Parametric Equalizer", nil),
 
         @"AUDynamicsProcessor":   NSLocalizedString(@"Dynamics Processor", nil),
         @"AUHipass":              NSLocalizedString(@"Highpass Filter", nil),

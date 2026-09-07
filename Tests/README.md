@@ -303,3 +303,47 @@ below the signal, which the second difference of the output shows as 2.2e-2
 against the 4.1e-4 the tone itself carries. Stepping every sample instead brings
 it to 4.6e-4 -- the tone's own curvature -- and costs nothing in the state a
 settled equaliser is in for all but 300 ms after a knob stops moving.
+
+
+## Parametric EQ audio unit
+
+`ParametricEQUnitTests.mm` checks the Apple side of the same effect -- the
+wiring, which is where this kind of thing actually breaks.
+
+```bash
+Tests/run-paraeq-unit-tests.sh   # needs a window server session; it draws the editor
+```
+
+46 checks, all passing on macOS 14.8.8:
+
+- **registration and discovery.** The unit registers under
+  `Embrace: EmbraceParametricEQ`, `EffectType.allEffectTypes` finds it, and the
+  name it reports is `EmbraceParametricEQ` -- which is what a saved set list
+  stores, so a rename here silently drops effects out of saved chains. Apple's
+  is checked at the same time, still present under `AppleParametricEQ` and
+  showing as "Parametric Equalizer (Apple)".
+- **rendered vs drawn.** Sines go through the unit's own
+  `AUInternalRenderBlock`, pulled from an upstream block the way Embrace's graph
+  does it, and the gain measured is compared against the curve the editor draws
+  from `paraeq::magnitudeDb`. Nine frequencies, agreeing to within 0.003 dB.
+- **control writes racing the render thread.** ~700k parameter writes from
+  another queue across 60 render passes. This is the claim that `update()` may
+  run on the render thread: it reads fifteen relaxed atomics, designs
+  coefficients and calls `retune()`, which allocates nothing and cannot fail.
+  Nothing went non-finite, no render returned an error, and putting the controls
+  back leaves it flat again.
+- **no band count to corrupt.** The layout is fixed, so no address past the
+  fifteenth resolves and the `AUNBandEQView` trap has no analogue here. That,
+  rather than a mitigation, is what this unit exists for.
+- **the editor.** Builds, has exactly fifteen driveable controls -- one per
+  parameter -- tracks its parameters after a change, and draws in both
+  appearances. The PNGs are written to `$TMPDIR` and the paths printed, because
+  looking at the layout is otherwise the one part that needs a person.
+
+Two defects came out of writing them, both invisible until the editor was
+rendered to a file. The filter section was one column wide with a three-segment
+slope switch, which gave each segment 17 points and drew a row of blank buttons;
+there is now a check that every segment label fits in its segment. And the view
+painted no background of its own, relying on the window behind it -- which works
+in the app and fails anywhere else, because every colour in the view is a
+semantic one and white-in-dark-mode text on an unpainted view is invisible.
