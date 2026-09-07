@@ -23,6 +23,15 @@ Improved behaviour when external soundcard is suddenly disconnected during playb
 
 Keyboard control has been improved, automatic fade out when Stop is pressed (press the button one more time if it was accidental; set fadeout time to 0 in settings to get the old behaviour).
 
+## Reading crash reports
+
+EscapePod writes crash reports to `~/Library/Application Support/EmbraceNG/Crashes` as raw hex — per-thread backtraces, the crashing thread's registers and a binary image list, with no symbol names, because symbolication was meant to happen on the telemetry server. `Build/Symbolicate.py` turns one into a readable backtrace:
+
+    Build/Symbolicate.py              # newest report
+    Build/Symbolicate.py --all        # every report
+
+Frames in EmbraceNG resolve to function and source line whenever a binary or dSYM with a matching UUID is on the machine; add `--search <dir>` to point at the build that crashed. Frames in system frameworks print as `image + offset`, since those images live in the dyld shared cache and have no file on disk to read symbols from.
+
 ## Contact
 
 If you have questions or feature requests for EmbraceNG (Embrace fork), you can contact me via [Facebook](https://www.facebook.com/shaforostoff).
