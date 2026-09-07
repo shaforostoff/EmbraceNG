@@ -1,7 +1,7 @@
 # AUNBandEQ tests
 
 `NBandEQTests.m` exercises Apple's parametric EQ (`kAudioUnitSubType_NBandEQ`),
-which `Source/EffectAdditions.m` registers as `EmbraceParametricEQ`.
+which `Source/EffectAdditions.m` registers as `AppleParametricEQ`.
 
 ```bash
 Tests/run-nbandeq-tests.sh          # full suite, three allocator configurations

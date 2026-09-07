@@ -3,9 +3,9 @@
 
 #import "EffectAdditions.h"
 
-NSString * const EmbraceMappedEffect10BandEQ     = @"EmbraceGraphicEQ10";
-NSString * const EmbraceMappedEffect31BandEQ     = @"EmbraceGraphicEQ31";
-NSString * const EmbraceMappedEffectParametricEQ = @"EmbraceParametricEQ";
+NSString * const EmbraceMappedEffect10BandEQ          = @"EmbraceGraphicEQ10";
+NSString * const EmbraceMappedEffect31BandEQ          = @"EmbraceGraphicEQ31";
+NSString * const EmbraceMappedEffectAppleParametricEQ = @"AppleParametricEQ";
 
 NSString * const EmbraceEffectDeclick = @"EmbraceDeclick";
 NSString * const EmbraceEffectDehum   = @"EmbraceDehum";
@@ -57,7 +57,7 @@ static ParametricEQBand sParametricEQBands[] = {
 
     acd.componentSubType = kAudioUnitSubType_NBandEQ;
 
-    [self registerMappedTypeWithName:EmbraceMappedEffectParametricEQ audioComponentDescription:&acd configurator:^(AUAudioUnit *unit) {
+    [self registerMappedTypeWithName:EmbraceMappedEffectAppleParametricEQ audioComponentDescription:&acd configurator:^(AUAudioUnit *unit) {
         AUParameterTree *parameterTree = [unit parameterTree];
 
         void (^setBandParameter)(AudioUnitParameterID, NSInteger, AUValue) =
@@ -93,9 +93,9 @@ static ParametricEQBand sParametricEQBands[] = {
     NSString *name = [self name];
 
     NSDictionary *map = @{
-        EmbraceMappedEffect10BandEQ:     NSLocalizedString(@"10-band Graphic Equalizer", nil),
-        EmbraceMappedEffect31BandEQ:     NSLocalizedString(@"31-band Graphic Equalizer", nil),
-        EmbraceMappedEffectParametricEQ: NSLocalizedString(@"Parametric Equalizer", nil),
+        EmbraceMappedEffect10BandEQ:          NSLocalizedString(@"10-band Graphic Equalizer", nil),
+        EmbraceMappedEffect31BandEQ:          NSLocalizedString(@"31-band Graphic Equalizer", nil),
+        EmbraceMappedEffectAppleParametricEQ: NSLocalizedString(@"Parametric Equalizer (Apple)", nil),
 
         EmbraceEffectDeclick: NSLocalizedString(@"Declick", nil),
         EmbraceEffectDehum:   NSLocalizedString(@"Dehum", nil),

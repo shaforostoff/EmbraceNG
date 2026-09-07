@@ -5,7 +5,7 @@
 
 extern NSString * const EmbraceMappedEffect10BandEQ;
 extern NSString * const EmbraceMappedEffect31BandEQ;
-extern NSString * const EmbraceMappedEffectParametricEQ;
+extern NSString * const EmbraceMappedEffectAppleParametricEQ;
 
 // Registered by RestorationAudioUnit, not mapped -- these are the names
 // AudioComponentCopyName reports, and what a saved set list stores.

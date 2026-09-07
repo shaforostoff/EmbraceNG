@@ -314,7 +314,7 @@
 
         if ([effectName isEqualToString:EmbraceMappedEffect10BandEQ] ||
             [effectName isEqualToString:EmbraceMappedEffect31BandEQ] ||
-            [effectName isEqualToString:EmbraceMappedEffectParametricEQ] ||
+            [effectName isEqualToString:EmbraceMappedEffectAppleParametricEQ] ||
             [effectName isEqualToString:@"AUGraphicEQ"] ||
             [effectName isEqualToString:@"AUNBandEQ"]
         ) {

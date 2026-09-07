@@ -31,7 +31,7 @@ static EffectCategory sGetCategory(NSString *name)
 
         @"EmbraceGraphicEQ10":    @( EffectCategoryEqualizers ),
         @"EmbraceGraphicEQ31":    @( EffectCategoryEqualizers ),
-        @"EmbraceParametricEQ":   @( EffectCategoryEqualizers ),
+        @"AppleParametricEQ":     @( EffectCategoryEqualizers ),
 
         @"AUBandpass":            @( EffectCategoryFilters ),
         @"AUParametricEQ":        @( EffectCategoryFilters ),
