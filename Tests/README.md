@@ -192,3 +192,75 @@ No synthesized mouse input. Dragging band handles on the curve runs AppKit
 tracking loops, which are difficult to drive deterministically from a test and
 easy to hang. If a corruption bug lives in the drag handling specifically,
 nothing here would find it.
+
+---
+
+# Synthesized mouse tests
+
+`NBandEQMouseTests.m` posts real `NSEvent`s and dispatches them, so the code
+under test is the editor's own mouse handling rather than the audio unit's API.
+
+```bash
+Tests/run-nbandeq-mouse-tests.sh
+```
+
+The obvious failure mode for a suite like this is passing by doing nothing, so
+every interaction is measured against the parameter tree and the band count: an
+interaction that changes neither is not counted as exercised, and
+`testControlsRespond` fails outright if nothing in the editor reacts.
+
+Mechanically: drag and mouse-up events are posted *before* the mouse-down that
+starts a control's tracking loop, because the loop pulls from the same queue,
+and the queue is drained between interactions so one cannot poison the next.
+Each group runs in an exec'd child under `alarm(90)`, so a wedged tracking loop
+is reported as a watchdog kill instead of hanging the run.
+
+`NSPopUpButton` is excluded everywhere. It is an `NSButton` subclass, so a naive
+button sweep picks up the per-band filter-type popups, and clicking one opens a
+modal menu loop that a synthetic event stream has no way out of -- it wedges
+until the watchdog fires.
+
+## What is covered
+
+Slider drags, 391 random drags across and beyond the editor's bounds, and 60
+clicks against ~32k rendered audio slices. Parameters stay finite throughout,
+the unit stays coherent, and audio never goes non-finite.
+
+## What is not covered, and why
+
+**Dragging band handles on the response curve.** `AUAdvancedEQGraphView`
+declines `mouseDown:` -- it returns in 0.0000s, and a 4px-resolution sweep of
+the whole curve finds no grabbable point -- unless its window is key. A session
+that will not grant key status makes this untestable: `makeKeyWindow`,
+`activateIgnoringOtherApps:`, a `canBecomeKeyWindow` override and wrapping the
+binary in a `.app` bundle all leave `isKeyWindow` false.
+
+The test detects this and **skips loudly rather than passing**. A plain
+`NSSlider` in the same view moves under the identical technique, which is what
+establishes that the harness works and the graph view is genuinely gating on
+key status. Re-run from a normal GUI login to cover it.
+
+**The editor's own band-count controls.** The ten plain buttons are the add and
+remove-band controls: a `+`/`-` pair in the header and a `-` per visible band
+row. Neither a synthetic click nor `-performClick:` moves a parameter or the
+band count, so their actions are not reachable from this harness and the suite
+reports `0 of 10`.
+
+This matters for how the band-count crash is scoped. If those buttons did change
+the count, a user could reach that crash by clicking `+`/`-` a few times, and
+`EmbraceAudioUnitFullStateByPreservingBandCount()` would not help -- it only
+guards state the app installs. **That was not demonstrated**, so the crash
+remains scoped to the preset path. It is worth re-checking on a machine where
+the editor's controls do respond.
+
+## An unguarded accessor, noted but not filed
+
+Clicking a control inside one of the eight hidden band rows reaches
+`-[CAAppleEQGraphView controlAtIndex:]` with an index past the end of its
+control array and throws `NSRangeException: index 8 beyond bounds [0 .. 7]`.
+
+A real mouse cannot click a hidden row, so this is not a user-reachable crash
+and the app needs no mitigation for it. It is recorded because the accessor is
+unguarded: anything else that reaches it with a stale index -- a band count that
+moved, say -- throws the same way. `IsReachableByMouse()` keeps the suite to
+controls a mouse could actually hit.
