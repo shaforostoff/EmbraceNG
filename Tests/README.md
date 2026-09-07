@@ -336,8 +336,8 @@ Tests/run-paraeq-unit-tests.sh   # needs a window server session; it draws the e
   fifteenth resolves and the `AUNBandEQView` trap has no analogue here. That,
   rather than a mitigation, is what this unit exists for.
 - **the editor.** Builds, has exactly fifteen driveable controls -- one per
-  parameter -- tracks its parameters after a change, and draws in both
-  appearances. The PNGs are written to `$TMPDIR` and the paths printed, because
+  parameter -- tracks its parameters after a change, offers Flatten where it can
+  actually be reached, and draws in both appearances. The PNGs are written to `$TMPDIR` and the paths printed, because
   looking at the layout is otherwise the one part that needs a person.
 
 Two defects came out of writing them, both invisible until the editor was

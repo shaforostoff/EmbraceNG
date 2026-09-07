@@ -541,7 +541,19 @@ int main(int argc, const char *argv[])
                 if (wrote) printf("        %s\n", [path UTF8String]);
             }
 
-            [(ParametricEQView *)view flatten];
+            // Reachable, not just implemented: this is the only route to it,
+            // since the shared editor window has no Flatten toolbar item.
+            NSMenu *menu = [view menu];
+            NSMenuItem *flattenItem = [menu numberOfItems] > 0 ? [menu itemAtIndex:0] : nil;
+
+            ckTrue("the view offers Flatten in a context menu",
+                   flattenItem != nil &&
+                   [flattenItem action] == @selector(flatten) &&
+                   [flattenItem target] == view);
+
+            if (flattenItem) {
+                [NSApp sendAction:[flattenItem action] to:[flattenItem target] from:flattenItem];
+            }
 
             BOOL flat = YES;
             AUParameterAddress gains[] = {

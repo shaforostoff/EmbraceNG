@@ -555,6 +555,7 @@ static const int sColumnCount  = 13;
         _switches    = [NSMutableArray arrayWithCapacity:sSectionCount];
 
         [self _build];
+        [self _buildMenu];
         [self reloadData];
 
         // Catches everything that changes a value from outside this view: a
@@ -632,6 +633,25 @@ static NSTextField *sMakeLabel(NSString *string, CGRect frame, CGFloat fontSize,
     [[label cell] setLineBreakMode:NSLineBreakByClipping];
 
     return label;
+}
+
+
+// Flatten lives here rather than on the toolbar.  The window this editor is
+// hosted in -- EditSystemEffectWindow -- is shared with every effect that has
+// no view of its own, and a Flatten item there would appear on declick and
+// dehum, where it means nothing.  The graphic EQ has one because it has a
+// window to itself.
+//
+- (void) _buildMenu
+{
+    NSMenu *menu = [[NSMenu alloc] init];
+
+    NSMenuItem *item = [menu addItemWithTitle:NSLocalizedString(@"Flatten Gains", nil)
+                                       action:@selector(flatten)
+                                keyEquivalent:@""];
+    [item setTarget:self];
+
+    [self setMenu:menu];
 }
 
 
