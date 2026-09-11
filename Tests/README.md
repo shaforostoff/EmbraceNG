@@ -280,7 +280,7 @@ needed from AudioToolbox would belong in the wrapper instead.
 Tests/run-paraeq-core-tests.sh   # -O2 as shipped, then -O0 with asan + ubsan
 ```
 
-43 checks, all passing on macOS 14.8.8. The interesting ones:
+50 checks. The interesting ones:
 
 - **measured vs predicted.** Sines are run through a real `Channel` and the gain
   it actually applies is compared against `magnitudeDb()`, within 0.06 dB at
@@ -296,6 +296,15 @@ Tests/run-paraeq-core-tests.sh   # -O2 as shipped, then -O0 with asan + ubsan
   glide's safety is an argument rather than a measurement -- the stable region
   is convex, so a straight line between two stable settings cannot leave it --
   and this pins the argument to the code.
+- **the drawing path agrees with `magnitudeDb`.** `curveTrig()` / `curveDb()`
+  reach the same curve a point at a time by a cheaper route -- one shared trig
+  table, and one logarithm of the product of six magnitudes rather than six
+  logarithms -- so they are checked against it at 601 points of a sweep that
+  runs past Nyquist at both ends, for the whole cascade and for each section on
+  its own. Agreement is within 2e-3 dB, which is the float output against double
+  arithmetic on a curve reaching -100 dB. The table is also checked to survive a
+  control move, since the whole design rests on it depending on nothing a knob
+  can change.
 
 One finding came out of writing them. The glide originally stepped the
 coefficients once per 32-sample sub-block, and *that is audible*: a jump in `b0`
@@ -304,6 +313,13 @@ below the signal, which the second difference of the output shows as 2.2e-2
 against the 4.1e-4 the tone itself carries. Stepping every sample instead brings
 it to 4.6e-4 -- the tone's own curvature -- and costs nothing in the state a
 settled equaliser is in for all but 300 ms after a knob stops moving.
+
+The core and the last six checks came back from the foobar2000 port
+(`foo_dsp_paraeq`), which is where `paraeq_core.{h,cpp}` is now developed; the
+copy under `Source/` is byte-identical to the one there and should be synced in
+that direction. `ParametricEQView.mm` still draws with `magnitudeDb()` a point
+at a time and could use `curveTrig()` / `curveDb()` instead -- about a fifth of
+the work per redraw, which is worth having on a drag.
 
 
 ## Parametric EQ audio unit

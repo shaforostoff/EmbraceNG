@@ -315,6 +315,119 @@ int main()
         ckTrue("signal channel carries signal", energyL > 1.0);
     }
 
+    // -----------------------------------------------------------------------
+    // The fast drawing path has to agree with the slow one it replaces, at
+    // every point and for every shape of section - otherwise the picture and
+    // the audio are two different equalisers.
+
+    std::printf("\n== the drawing path agrees with magnitudeDb\n");
+    {
+        Params p = Params::defaults();
+        p.hpSlope      =      2; p.hpFrequency  =    80.0f;
+        p.lfGain       =   6.0f; p.lfFrequency  =   120.0f;
+        p.lmfGain      =  -8.0f; p.lmfFrequency =  1000.0f; p.lmfQ = 4.0f;
+        p.hmfGain      =  12.0f; p.hmfFrequency =  5000.0f; p.hmfQ = 0.7f;
+        p.hfGain       = -20.0f; p.hfFrequency  =  8000.0f;
+        p.outputGain   =  -3.0f;
+
+        Config cfg;
+        cfg.compute(p, kFs);
+
+        // A log sweep, which is what a display asks for, running past the
+        // audible band at both ends so curveTrig's clamps are exercised too.
+        const size_t kPoints = 601;
+        std::vector<double> hz(kPoints), trig(kPoints * kCurveTrigStride);
+        for (size_t i = 0; i < kPoints; i++) {
+            hz[i] = 10.0 * std::pow(4000.0, (double)i / (double)(kPoints - 1));
+        }
+        curveTrig(hz.data(), kPoints, kFs, trig.data());
+
+        std::vector<float> fast(kPoints);
+        curveDb(cfg, trig.data(), kPoints, fast.data());
+
+        double worst = 0.0, worstAt = 0.0;
+        for (size_t i = 0; i < kPoints; i++) {
+            // Past Nyquist curveTrig holds the point at Nyquist and magnitudeDb
+            // does not, so compare where both are asked the same question.
+            if (hz[i] > kFs * 0.5) continue;
+            double d = std::fabs(magnitudeDb(cfg, hz[i]) - (double)fast[i]);
+            if (d > worst) { worst = d; worstAt = hz[i]; }
+        }
+        std::printf("        worst disagreement at %.0f Hz\n", worstAt);
+        // float output against double arithmetic, on a curve reaching -100 dB.
+        ck("cascade: fast curve matches magnitudeDb", worst, 0.0, 2e-3);
+
+        // And one section at a time, which is the overlay a host draws for the
+        // band under the pointer.
+        double worstOne = 0.0;
+        std::vector<float> one(kPoints);
+        for (int s = 0; s < kStages; s++) {
+            curveDb(cfg.stage[s], trig.data(), kPoints, one.data());
+            for (size_t i = 0; i < kPoints; i++) {
+                if (hz[i] > kFs * 0.5) continue;
+                double d = std::fabs(magnitudeDb(cfg.stage[s], hz[i], kFs)
+                                     - (double)one[i]);
+                if (d > worstOne) worstOne = d;
+            }
+        }
+        ck("one section: fast curve matches magnitudeDb", worstOne, 0.0, 2e-3);
+
+        // The table is the expensive half, and the whole design rests on it
+        // depending on nothing a control can move - otherwise a drag would have
+        // to rebuild it every frame.
+        Params moved = p;
+        moved.lmfGain = 3.0f; moved.hpFrequency = 300.0f; moved.hfBell = true;
+        Config movedCfg;
+        movedCfg.compute(moved, kFs);
+
+        std::vector<float> kept(kPoints), remade(kPoints);
+        curveDb(movedCfg, trig.data(), kPoints, kept.data());
+
+        std::vector<double> rebuilt(kPoints * kCurveTrigStride);
+        curveTrig(hz.data(), kPoints, kFs, rebuilt.data());
+        curveDb(movedCfg, rebuilt.data(), kPoints, remade.data());
+
+        bool same = true;
+        for (size_t i = 0; i < kPoints; i++) if (kept[i] != remade[i]) same = false;
+        ckTrue("the table survives a control move", same);
+    }
+
+    std::printf("\n== a flat equaliser draws a flat line\n");
+    {
+        const size_t kPoints = 256;
+        std::vector<double> hz(kPoints), trig(kPoints * kCurveTrigStride);
+        for (size_t i = 0; i < kPoints; i++) {
+            hz[i] = 20.0 * std::pow(1000.0, (double)i / (double)(kPoints - 1));
+        }
+        curveTrig(hz.data(), kPoints, kFs, trig.data());
+
+        Config cfg;
+        cfg.compute(Params::defaults(), kFs);
+
+        std::vector<float> db(kPoints);
+        curveDb(cfg, trig.data(), kPoints, db.data());
+
+        double worst = 0.0;
+        for (size_t i = 0; i < kPoints; i++) {
+            worst = std::fmax(worst, std::fabs((double)db[i]));
+        }
+        ck("defaults draw 0 dB everywhere", worst, 0.0, 1e-5);
+
+        // A high-pass really does reach zero at DC, and the floor is what keeps
+        // that a number rather than letting -inf into a polyline.
+        Params hp = Params::defaults();
+        hp.hpSlope = 2; hp.hpFrequency = 350.0f;
+        cfg.compute(hp, kFs);
+        curveDb(cfg, trig.data(), kPoints, db.data());
+
+        bool allFinite = true;
+        for (size_t i = 0; i < kPoints; i++) {
+            if (!(db[i] > -1e30f && db[i] < 1e30f)) allFinite = false;
+        }
+        ckTrue("24 dB/oct at the bottom of the sweep stays finite", allFinite);
+        ckTrue("and is well below 0 dB there", db[0] < -40.0f);
+    }
+
     std::printf("\n%s  (%d failures)\n", sFail ? "FAILED" : "all checks passed", sFail);
     return sFail ? 1 : 0;
 }

@@ -63,10 +63,14 @@ inline float saneRange(float v, float fallback, float lo, float hi) {
 scoped_flush_denormals::scoped_flush_denormals() : m_saved(_mm_getcsr()) {
     // FTZ only. DAZ lives in bit 6, which the earliest SSE2 parts treat as
     // reserved, and writing it there raises a general protection fault.
-    _mm_setcsr((m_saved & ~0x8000u) | 0x8000u);
+    //
+    // Both halves are conditional because ldmxcsr flushes the pipeline and a
+    // host has usually set FTZ already, so the ordinary case is to read a bit
+    // and touch nothing. Same form as the sibling cores.
+    if ((m_saved & 0x8000u) == 0u) _mm_setcsr(m_saved | 0x8000u);
 }
 scoped_flush_denormals::~scoped_flush_denormals() {
-    _mm_setcsr(m_saved);
+    if ((m_saved & 0x8000u) == 0u) _mm_setcsr(m_saved);
 }
 
 #elif defined(PARAEQ_HAVE_FPCR)
@@ -515,5 +519,94 @@ void Channel::process(Sample * io, size_t frames, size_t stride)
 
 template void Channel::process<float>(float *, size_t, size_t);
 template void Channel::process<double>(double *, size_t, size_t);
+
+// ---------------------------------------------------------------------------
+// Drawing the response
+// ---------------------------------------------------------------------------
+
+namespace {
+
+//! Squared magnitude of one section at a point of the table, as a ratio. Kept
+//! separate from the dB conversion so the cascade can multiply six of these and
+//! take one logarithm instead of six.
+inline double powerRatio(const Biquad & b, const double * t)
+{
+    const double c1 = t[0], s1 = t[1], c2 = t[2], s2 = t[3];
+
+    // H(z) at z = exp(i*w); z^-1 = exp(-i*w), hence the negated imaginary parts.
+    const double numRe = b.b0 + b.b1 * c1 + b.b2 * c2;
+    const double numIm =      -(b.b1 * s1 + b.b2 * s2);
+    const double denRe = 1.0  + b.a1 * c1 + b.a2 * c2;
+    const double denIm =      -(b.a1 * s1 + b.a2 * s2);
+
+    const double den = denRe * denRe + denIm * denIm;
+    if (!(den > 1e-300)) return 1.0;
+
+    return (numRe * numRe + numIm * numIm) / den;
+}
+
+} // anonymous namespace
+
+
+void curveTrig(const double * frequencyHz, size_t count, double sampleRate,
+               double * trig)
+{
+    if (!frequencyHz || !trig) return;
+
+    const double fs = (sane(sampleRate) && sampleRate > 0.0) ? sampleRate : 44100.0;
+
+    for (size_t i = 0; i < count; i++) {
+        // Past Nyquist the response is a mirror of itself rather than anything a
+        // reader should be shown, so a point up there is held at Nyquist. A
+        // window wider than the audible band is the ordinary way to get here.
+        const double f = clampd(sane(frequencyHz[i]) ? frequencyHz[i] : 0.0,
+                                0.0, fs * 0.5);
+        const double w = 2.0 * kPi * f / fs;
+
+        double * t = trig + i * (size_t)kCurveTrigStride;
+        t[0] = cos(w);
+        t[1] = sin(w);
+        t[2] = cos(2.0 * w);
+        t[3] = sin(2.0 * w);
+    }
+}
+
+
+void curveDb(const Config & cfg, const double * trig, size_t count, float * outDb)
+{
+    if (!trig || !outDb) return;
+
+    // The trim is a scalar on the whole cascade, so it is one addition per point
+    // rather than anything inside the loop over stages.
+    const double trimDb = (cfg.outputGain > 0.0)
+                        ? 20.0 * log10(cfg.outputGain)
+                        : -600.0;
+
+    for (size_t i = 0; i < count; i++) {
+        const double * t = trig + i * (size_t)kCurveTrigStride;
+
+        double power = 1.0;
+        for (int s = 0; s < kStages; s++) {
+            power *= powerRatio(cfg.stage[s], t);
+        }
+
+        // A power ratio, so 10*log10 rather than 20. Six sections of at most
+        // 20 dB each cannot take the product anywhere near the limits of a
+        // double; the floor is there for the high-pass, which really does go to
+        // zero at DC.
+        outDb[i] = (float)(10.0 * log10(power + 1e-300) + trimDb);
+    }
+}
+
+
+void curveDb(const Biquad & b, const double * trig, size_t count, float * outDb)
+{
+    if (!trig || !outDb) return;
+
+    for (size_t i = 0; i < count; i++) {
+        outDb[i] = (float)(10.0 * log10(powerRatio(b, trig + i * (size_t)kCurveTrigStride)
+                                        + 1e-300));
+    }
+}
 
 } // namespace paraeq
