@@ -317,9 +317,18 @@ settled equaliser is in for all but 300 ms after a knob stops moving.
 The core and the last six checks came back from the foobar2000 port
 (`foo_dsp_paraeq`), which is where `paraeq_core.{h,cpp}` is now developed; the
 copy under `Source/` is byte-identical to the one there and should be synced in
-that direction. `ParametricEQView.mm` still draws with `magnitudeDb()` a point
-at a time and could use `curveTrig()` / `curveDb()` instead -- about a fifth of
-the work per redraw, which is worth having on a drag.
+that direction.
+
+`ParametricEQView.mm` draws with that path: `-_prepareCurveTableForPlot:rate:`
+holds a trig table against the plot geometry and the sample rate, and each
+redraw is one `curveDb()` over it. Nothing here covers the swap -- the curve the
+view builds is internal to `drawRect:` and there is nothing to assert on -- so
+it was checked instead by transcribing both loops into a plain C++ program and
+comparing them point for point: identical counts and x coordinates at every
+plot width tried, including a fractional one, with y agreeing to 2.6e-6 points.
+The one deliberate difference is above Nyquist, where `curveTrig()` holds its
+last real point and `magnitudeDb()` drew the mirrored response instead; that
+region is only reachable below a 40 kHz stream, since the plot stops at 20 kHz.
 
 
 ## Parametric EQ audio unit

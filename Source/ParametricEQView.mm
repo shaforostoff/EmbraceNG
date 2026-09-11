@@ -12,6 +12,7 @@
 #import <AVFoundation/AVFoundation.h>
 
 #include <cmath>
+#include <vector>
 
 
 static const CGFloat sMargin        = 20;
@@ -280,7 +281,17 @@ static CGFloat sAngleForNormalized(double normalized)
 @end
 
 
-@implementation ParametricEQCurveView
+@implementation ParametricEQCurveView {
+    // The frequency axis, the trig table read off it, and the curve read off
+    // that.  All three depend on the plot geometry and the sample rate and on
+    // nothing a knob can move, which is what makes them worth keeping between
+    // redraws -- see -_prepareCurveTableForPlot:rate: below.
+    std::vector<double> _curveHz;
+    std::vector<double> _curveTrig;
+    std::vector<float>  _curveDb;
+    CGFloat             _curveWidth;
+    double              _curveRate;
+}
 
 - (BOOL) isOpaque { return NO; }
 
@@ -369,6 +380,51 @@ static CGFloat sYForDecibels(CGRect plot, double db)
 }
 
 
+// Brings the frequency axis and its trig table into line with this plot and
+// this sample rate, and answers how many points they hold -- 0 when the plot is
+// too small to draw a line across.
+//
+// The table is the expensive half of drawing a curve.  Asking magnitudeDb() for
+// one point costs four trig calls per stage and a logarithm per stage, and both
+// are per-point constants in disguise: cos(w) and cos(2w) depend on the
+// frequency and the sample rate, neither of which a knob can move, and the six
+// stage magnitudes are multiplied, so their six logarithms are one logarithm of
+// the product.  Built here, a redraw is arithmetic -- about a fifth of the work,
+// which is worth having on a drag.  See the note above curveTrig() in
+// paraeq_core.h.
+- (size_t) _prepareCurveTableForPlot:(CGRect)plot rate:(double)rate
+{
+    if (!(plot.size.width >= 1) || !(rate > 0)) return 0;
+
+    // The points the drawing loop below walks: one per pixel column from the
+    // left edge of the plot to the right.  Normalized against the full width
+    // rather than against the last index, so a point lands exactly where
+    // sXForFrequency would put its frequency.
+    const size_t count = (size_t)floor((double)plot.size.width) + 1;
+
+    if (count != _curveHz.size() ||
+        plot.size.width != _curveWidth ||
+        rate != _curveRate)
+    {
+        _curveHz.resize(count);
+        _curveTrig.resize(count * (size_t)paraeq::kCurveTrigStride);
+        _curveDb.resize(count);
+
+        for (size_t i = 0; i < count; i++) {
+            double normalized = (double)i / (double)plot.size.width;
+            _curveHz[i] = sCurveMinHz * pow(sCurveMaxHz / sCurveMinHz, normalized);
+        }
+
+        paraeq::curveTrig(_curveHz.data(), count, rate, _curveTrig.data());
+
+        _curveWidth = plot.size.width;
+        _curveRate  = rate;
+    }
+
+    return count;
+}
+
+
 - (void) drawRect:(NSRect)dirtyRect
 {
     CGRect bounds = [self bounds];
@@ -387,37 +443,40 @@ static CGFloat sYForDecibels(CGRect plot, double db)
         paraeq::Params params = EmbraceParametricEQParamsFromTree([_audioUnit parameterTree]);
         params.bypass = [_audioUnit shouldBypassEffect] ? true : false;
 
+        double rate = [self _sampleRate];
+
         paraeq::Config config;
-        config.compute(params, [self _sampleRate]);
+        config.compute(params, rate);
 
-        // One point per pixel column, which is the most detail there is room to
-        // show and cheap enough not to matter: fifteen hundred evaluations of
-        // six biquads, only when something moves.
-        NSBezierPath *curve = [NSBezierPath bezierPath];
-        NSBezierPath *fill  = [NSBezierPath bezierPath];
+        const size_t count = [self _prepareCurveTableForPlot:plot rate:rate];
 
-        CGFloat zeroY = sYForDecibels(plot, 0);
-        BOOL    first = YES;
+        if (count >= 2) {
+            // The whole cascade in one pass over the table, including the
+            // output trim.  Reads the targets rather than the coefficients
+            // actually in use, so the curve shows where the controls are and
+            // not where a glide has got to.
+            paraeq::curveDb(config, _curveTrig.data(), count, _curveDb.data());
 
-        for (CGFloat x = CGRectGetMinX(plot); x <= CGRectGetMaxX(plot); x += 1) {
-            double normalized = (x - plot.origin.x) / plot.size.width;
-            double hz = sCurveMinHz * pow(sCurveMaxHz / sCurveMinHz, normalized);
+            NSBezierPath *curve = [NSBezierPath bezierPath];
+            NSBezierPath *fill  = [NSBezierPath bezierPath];
 
-            CGPoint point = CGPointMake(x, sYForDecibels(plot, paraeq::magnitudeDb(config, hz)));
+            CGFloat zeroY = sYForDecibels(plot, 0);
 
-            if (first) {
-                [curve moveToPoint:point];
-                [fill moveToPoint:CGPointMake(x, zeroY)];
-                [fill lineToPoint:point];
-                first = NO;
-            } else {
-                [curve lineToPoint:point];
-                [fill lineToPoint:point];
+            for (size_t i = 0; i < count; i++) {
+                CGPoint point = CGPointMake(plot.origin.x + (CGFloat)i,
+                                            sYForDecibels(plot, _curveDb[i]));
+
+                if (i == 0) {
+                    [curve moveToPoint:point];
+                    [fill moveToPoint:CGPointMake(point.x, zeroY)];
+                    [fill lineToPoint:point];
+                } else {
+                    [curve lineToPoint:point];
+                    [fill lineToPoint:point];
+                }
             }
-        }
 
-        if (!first) {
-            [fill lineToPoint:CGPointMake(CGRectGetMaxX(plot), zeroY)];
+            [fill lineToPoint:CGPointMake(plot.origin.x + (CGFloat)(count - 1), zeroY)];
             [fill closePath];
 
             [[[NSColor controlAccentColor] colorWithAlphaComponent:0.16] set];
