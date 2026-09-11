@@ -501,6 +501,33 @@ int main(int argc, const char *argv[])
 
             ckTrue("every segment label fits in its segment", allLabelled);
 
+            // And the section titles, for the same reason one row up: they are
+            // centred in their own columns and clipped rather than shrunk, so a
+            // name that outgrew its section would quietly lose its ends. This
+            // is the check that the names being what the band is for rather
+            // than what a console called it does not cost anything.
+            BOOL allTitlesFit = YES;
+
+            for (NSView *subview in [view subviews]) {
+                if (![subview isKindOfClass:[NSTextField class]]) continue;
+                if (![[subview identifier] isEqualToString:@"sectionTitle"]) continue;
+
+                NSTextField *title  = (NSTextField *)subview;
+                NSString    *string = [title stringValue];
+
+                CGSize needed = [string sizeWithAttributes:@{
+                    NSFontAttributeName: [title font] ?: [NSFont systemFontOfSize:10]
+                }];
+
+                if (![string length] || needed.width > [title frame].size.width) {
+                    printf("        \"%s\" needs %.0fpt, has %.0fpt\n",
+                           [string UTF8String], needed.width, [title frame].size.width);
+                    allTitlesFit = NO;
+                }
+            }
+
+            ckTrue("every section title fits its section", allTitlesFit);
+
             sSetValue(unit, EmbraceParametricEQParameterFilterSlope, 2);
             [(ParametricEQView *)view reloadData];
 

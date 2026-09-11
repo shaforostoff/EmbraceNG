@@ -340,7 +340,11 @@ wiring, which is where this kind of thing actually breaks.
 Tests/run-paraeq-unit-tests.sh   # needs a window server session; it draws the editor
 ```
 
-46 checks, all passing on macOS 14.8.8:
+47 checks. The 46 that predate the band renaming all pass on macOS 14.8.8;
+the forty-seventh measures the section titles against the sections they are
+centred in, and was written on Windows alongside the renaming, so it has not
+been run. It is the check the renaming needs: the titles are clipped rather
+than shrunk, and BRILLIANCE is four times the width of HMF.
 
 - **registration and discovery.** The unit registers under
   `Embrace: EmbraceParametricEQ`, `EffectType.allEffectTypes` finds it, and the
@@ -363,7 +367,8 @@ Tests/run-paraeq-unit-tests.sh   # needs a window server session; it draws the e
   rather than a mitigation, is what this unit exists for.
 - **the editor.** Builds, has exactly fifteen driveable controls -- one per
   parameter -- tracks its parameters after a change, offers Flatten where it can
-  actually be reached, and draws in both appearances. The PNGs are written to `$TMPDIR` and the paths printed, because
+  actually be reached, fits every segment label in its segment and every section
+  title in its section, and draws in both appearances. The PNGs are written to `$TMPDIR` and the paths printed, because
   looking at the layout is otherwise the one part that needs a person.
 
 Two defects came out of writing them, both invisible until the editor was

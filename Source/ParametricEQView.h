@@ -7,7 +7,10 @@
 
 
 // The editor for ParametricEQAudioUnit: a response curve over a console strip,
-// read left to right as filter, LF, LMF, HMF, HF, output.
+// read left to right as low cut, bass, reverb cut, brilliance, hiss cut,
+// output - the sections being named for the job rather than for the console.
+// The shorthand a strip would have used, HP LF LMF HMF HF, survives in the
+// parameter identifiers, which is where it has to stay.
 //
 // The four gain knobs are drawn larger than the rest, which is the whole point
 // of the layout rather than decoration.  Frequency and Q get set once for a box

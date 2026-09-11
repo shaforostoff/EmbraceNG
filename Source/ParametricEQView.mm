@@ -558,13 +558,24 @@ typedef struct {
 
 static const AUParameterAddress kNoSwitch = EmbraceParametricEQParameterCount;
 
+// The sections, named for the job rather than for the console.  An operator
+// reaching for the hiss should not have to know that a strip would have called
+// that band HF, and the names say which way the knob usually goes, which is the
+// point of a fixed layout: these are four jobs, not four identical bands.  The
+// shorthand survives in the parameter identifiers, which is where it has to
+// stay - those are what a saved preset stores.
+//
+// The same names the foobar2000 port shows, and from the same place: the tango
+// transfer literature, which calls them low cut, bass, reverb cut, brilliance
+// and hiss cut.
+//
 static const ParametricEQSectionSpec sSections[] = {
-    { "FILTER",  0, 2, EmbraceParametricEQParameterFilterSlope, 3, "Off,12,24" },
-    { "LF",      2, 2, EmbraceParametricEQParameterLFBell,      2, NULL        },
-    { "LMF",     4, 3, kNoSwitch,                               0, NULL        },
-    { "HMF",     7, 3, kNoSwitch,                               0, NULL        },
-    { "HF",     10, 2, EmbraceParametricEQParameterHFBell,       2, NULL       },
-    { "OUTPUT", 12, 1, kNoSwitch,                               0, NULL        }
+    { "LOW CUT",     0, 2, EmbraceParametricEQParameterFilterSlope, 3, "Off,12,24" },
+    { "BASS",        2, 2, EmbraceParametricEQParameterLFBell,      2, NULL        },
+    { "REVERB CUT",  4, 3, kNoSwitch,                               0, NULL        },
+    { "BRILLIANCE",  7, 3, kNoSwitch,                               0, NULL        },
+    { "HISS CUT",   10, 2, EmbraceParametricEQParameterHFBell,      2, NULL        },
+    { "OUTPUT",     12, 1, kNoSwitch,                               0, NULL        }
 };
 
 static const int sSectionCount = (int)(sizeof(sSections) / sizeof(sSections[0]));
@@ -740,9 +751,19 @@ static NSTextField *sMakeLabel(NSString *string, CGRect frame, CGFloat fontSize,
         CGFloat x     = sXForColumn(section->firstColumn);
         CGFloat width = section->columns * sColumnWidth;
 
-        [self addSubview:sMakeLabel(@(section->title),
+        // titleLabel rather than title: the segment loop below has a title of
+        // its own, and one shadowing the other is a way to read this wrong.
+        NSTextField *titleLabel = sMakeLabel(@(section->title),
             NSMakeRect(x, titleY, width, sTitleHeight), 10,
-            [NSColor secondaryLabelColor], NSFontWeightSemibold)];
+            [NSColor secondaryLabelColor], NSFontWeightSemibold);
+
+        // Named so the tests can pick the titles out from the other labels and
+        // check that each still fits its section.  They are centred and clipped
+        // rather than shrunk, so a name that outgrew its columns would quietly
+        // lose its ends.
+        [titleLabel setIdentifier:@"sectionTitle"];
+
+        [self addSubview:titleLabel];
 
         if (section->switchAddress == kNoSwitch) continue;
 
