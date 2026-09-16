@@ -167,8 +167,14 @@ static AUParameter *sMakeParameter(
             return state->value[[parameter address]].load(std::memory_order_relaxed);
         }];
 
+        // Built, not configured.  -allocateRenderResources is the first point
+        // at which the real sample rate and channel count are known, and it
+        // configures before anything can render; configuring here as well only
+        // sized a 44.1 kHz envelope for that call to throw away -- 4.4 MB of it
+        // per unit, on every stream that is not 44.1 kHz.  Both cores construct
+        // without touching the heap, so an unconfigured DSP costs nothing, and
+        // both render blocks refuse to run until one has been.
         [self createDSP];
-        [self configureDSPWithSampleRate:44100 channels:2];
     }
 
     return self;
@@ -495,6 +501,13 @@ struct DeclickDSP {
     {
         if (!pullInputBlock) return kAudioUnitErr_NoConnection;
 
+        // A Channel may not be touched before configure(), and readAhead() goes
+        // straight at channel[0].  -allocateRenderResources is what configures,
+        // and the host is required to call it first; this is here so that a host
+        // that does not is an error return rather than a configure -- which is to
+        // say an allocation -- on the render thread.
+        if (!dsp->configured) return kAudioUnitErr_Uninitialized;
+
         AUAudioUnitStatus err = sPrepareBufferList(outputData, frameCount);
         if (err) return err;
 
@@ -564,7 +577,12 @@ struct DehumDSP {
     {
         // A new record means a new hum, so nothing carries over.  reset() only
         // memsets buffers it already holds, so this is safe here.
-        if (forgetPending.exchange(false, std::memory_order_relaxed)) {
+        //
+        // The flag is consumed either way: before the first configure there are
+        // no channels to forget with, and the configure below ends in the same
+        // reset.  A scout can publish against a unit whose render resources have
+        // not been allocated yet, so that ordering is reachable.
+        if (forgetPending.exchange(false, std::memory_order_relaxed) && configured) {
             for (int i = 0; i < channels; i++) {
                 channel[i].reset();
             }
@@ -878,6 +896,11 @@ static int sScoutHumLines(NSURL *fileURL, float sensitivity, float searchTo,
         AURenderPullInputBlock      pullInputBlock)
     {
         if (!pullInputBlock) return kAudioUnitErr_NoConnection;
+
+        // See the note in the declick render block: unconfigured is the host's
+        // mistake, and an error return is a cheaper way to say so than an
+        // allocation at a sample rate that was only ever a guess.
+        if (!dsp->configured) return kAudioUnitErr_Uninitialized;
 
         AUAudioUnitStatus err = sPrepareBufferList(outputData, frameCount);
         if (err) return err;
