@@ -89,6 +89,11 @@ typedef NS_ENUM(NSInteger, TrackLabel) {
 @property (nonatomic, readonly) NSString *initialKey;
 @property (nonatomic, readonly) NSString *recordedDate;
 
+// The BPM tag, or 0.  What the analysis measured is -detectedBeatsPerMinute and
+// is deliberately not merged in here: a tag the DJ typed and a number this app
+// worked out are different claims, and a tag added or corrected later should
+// win without anything having to be decoded again.  -effectiveBeatsPerMinute is
+// the one to show.
 @property (nonatomic, readonly) NSInteger beatsPerMinute;
 @property (nonatomic, readonly) NSTimeInterval startTime;
 @property (nonatomic, readonly) NSTimeInterval stopTime;
@@ -97,6 +102,21 @@ typedef NS_ENUM(NSInteger, TrackLabel) {
 @property (nonatomic, readonly) Tonality tonality;
 @property (nonatomic, readonly) NSInteger energyLevel;
 @property (nonatomic, readonly) NSInteger year;
+
+// Measured from the audio, during the same pass that reads the loudness.
+//
+// -detectedBeatsPerMinute is the tempo at the level a dancer taps -- the beat
+// for a tango, the bar for a vals or a milonga -- and is 0 where the track was
+// too short or too quiet to measure.  -detectedRhythm is one of bpmcore's class
+// names -- see BPMAnalyzer.h.  It is non-nil once the track has been through
+// the analysis at all, including when the analysis came back with nothing,
+// which is what stops such a track being re-analysed on every launch.
+@property (nonatomic, readonly) double    detectedBeatsPerMinute;
+@property (nonatomic, readonly) NSString *detectedRhythm;
+
+// The BPM tag where the file carried one, and the measurement rounded to the
+// nearest whole BPM where it did not.
+@property (nonatomic, readonly) NSInteger effectiveBeatsPerMinute;
 
 @property (nonatomic, readonly) NSTimeInterval decodedDuration;
 @property (nonatomic, readonly) double  trackLoudness;

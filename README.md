@@ -23,6 +23,32 @@ Improved behaviour when external soundcard is suddenly disconnected during playb
 
 Keyboard control has been improved, automatic fade out when Stop is pressed (press the button one more time if it was accidental; set fadeout time to 0 in settings to get the old behaviour).
 
+## Tempo and rhythm
+
+A track with no BPM tag gets one measured from the audio. It happens during the
+loudness scan the app already runs over every track when it joins the set list,
+so no file is decoded twice and nothing has to be asked for: the BPM column
+fills itself in.
+
+A tag is never overwritten. The measurement is kept beside it rather than on top
+of it, so a BPM added or corrected in the file later wins with no re-analysis,
+and a track's state file says plainly which number came from where. The column
+shows the tag where there is one and the measurement where there is not.
+
+The analysis is `bpmcore`, from
+[foo_rubato](https://github.com/shaforostoff/foo_rubato) and vendored verbatim
+under `Vendor/` -- see `Vendor/PROVENANCE.md`. It reports the tempo at the level
+a dancer taps, which is the beat for a tango and the bar for a vals or a
+milonga, and it settles the rhythm first because that is what decides the level.
+Measured upstream against 3,692 hand-tapped tracks it lands within 2 BPM of the
+tap 88.7% of the time, and classifies the rhythm correctly 93.6% of the time.
+Three minutes of stereo costs about 0.2 seconds, against a decode that takes far
+longer.
+
+It runs on pffft rather than the portable scalar transform foo_rubato ships --
+about six times faster at these sizes, using SSE on Intel and NEON on Apple
+silicon.
+
 ## Reading crash reports
 
 EscapePod writes crash reports to `~/Library/Application Support/EmbraceNG/Crashes` as raw hex — per-thread backtraces, the crashing thread's registers and a binary image list, with no symbol names, because symbolication was meant to happen on the telemetry server. `Build/Symbolicate.py` turns one into a readable backtrace:

@@ -3,6 +3,7 @@
 
 #import "WorkerService.h"
 
+#import "BPMAnalyzer.h"
 #import "HugAudioFile.h"
 #import "HugUtils.h"
 #import "TrackKeys.h"
@@ -71,6 +72,12 @@ static NSDictionary *sReadLoudness(NSURL *internalURL)
 
         LoudnessMeasurer *measurer = LoudnessMeasurerCreate(format.mChannelsPerFrame, format.mSampleRate, framesRemaining);
 
+        // The tempo and the rhythm come out of the same pass.  Reading a track
+        // is by far the expensive part of this -- the analysis itself runs at
+        // hundreds of times realtime -- so the one thing worth insisting on is
+        // that the file is not decoded twice to answer two questions about it.
+        BPMAnalyzer *analyzer = BPMAnalyzerCreate(format.mChannelsPerFrame, format.mSampleRate);
+
         AudioBufferList *fillBufferList = HugAudioBufferListCreate(format.mChannelsPerFrame, 4096 * 16, YES);
 
         BOOL ok = YES;
@@ -80,6 +87,7 @@ static NSDictionary *sReadLoudness(NSURL *internalURL)
 
             if (frameCount) {
                 LoudnessMeasurerScanAudioBuffer(measurer, fillBufferList, frameCount);
+                BPMAnalyzerScanAudioBuffer(analyzer, fillBufferList, frameCount);
             } else {
                 break;
             }
@@ -94,6 +102,8 @@ static NSDictionary *sReadLoudness(NSURL *internalURL)
             }
         }
        
+        BPMAnalyzerFinish(analyzer);
+
         NSTimeInterval decodedDuration = fileLengthFrames / format.mSampleRate;
         
         [result setObject:@(decodedDuration)                       forKey:TrackKeyDecodedDuration];
@@ -102,8 +112,16 @@ static NSDictionary *sReadLoudness(NSURL *internalURL)
         [result setObject:@(LoudnessMeasurerGetLoudness(measurer)) forKey:TrackKeyTrackLoudness];
         [result setObject:@(LoudnessMeasurerGetPeak(measurer))     forKey:TrackKeyTrackPeak];
 
+        // Both go back whatever the answer was.  The rhythm is written even
+        // when nothing could be measured, because an absent rhythm is what the
+        // app reads as "never analysed" and re-requests; a track that cannot be
+        // measured would otherwise be decoded again on every launch.
+        [result setObject:@(BPMAnalyzerGetBeatsPerMinute(analyzer)) forKey:TrackKeyDetectedBPM];
+        [result setObject:BPMAnalyzerGetRhythm(analyzer)            forKey:TrackKeyDetectedRhythm];
+
         HugAudioBufferListFree(fillBufferList, YES);
         LoudnessMeasurerFree(measurer);
+        BPMAnalyzerFree(analyzer);
 
     } else {
         if ([audioFile error]) {

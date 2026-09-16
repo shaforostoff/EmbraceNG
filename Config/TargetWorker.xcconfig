@@ -5,3 +5,16 @@ GCC_PRECOMPILE_PREFIX_HEADER = YES
 LD_RUNPATH_SEARCH_PATHS = $(inherited) /Library/Frameworks
 CODE_SIGN_ENTITLEMENTS = Resources/Worker.entitlements
 ALWAYS_SEARCH_USER_PATHS = NO
+
+// bpmcore and the transform under it, both vendored -- see Vendor/PROVENANCE.md.
+// Consumers say #include <bpmcore/bpmcore.h>, so it is the Vendor directory
+// itself that goes on the search path and not either library's own.
+HEADER_SEARCH_PATHS = $(inherited) $(SRCROOT)/Vendor
+
+// Which transform the spectral stage uses, and at what width.  Two answers
+// rather than one because they are two questions: the width is a property of
+// the analyser and is the only one of the two that can move a BPM or a class,
+// and the backend should agree with the other at a fixed width to rounding.
+// pffft has no double variant, so the pair is not free -- real_fft.cpp refuses
+// to compile if one is changed without the other.
+GCC_PREPROCESSOR_DEFINITIONS = $(inherited) BPMCORE_FFT_PFFFT BPMCORE_FFT_SCALAR_TYPE=float

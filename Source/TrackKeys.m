@@ -33,6 +33,18 @@ NSString * const TrackKeyGenre            = @"genre";
 NSString * const TrackKeyYear             = @"year";
 NSString * const TrackKeyRecordedDate     = @"recordedDate";
 
+// What the audio measured, as opposed to what the file claims.  Kept apart from
+// TrackKeyBPM and TrackKeyGenre rather than filled in over them, so that a tag
+// added or corrected later wins without anything having to be re-analysed, and
+// so a state file says plainly which number came from where.
+//
+// TrackKeyDetectedRhythm is one of bpmcore's class names -- see DanceRhythm.h --
+// and is written even when nothing could be measured, as
+// BPMAnalyzerRhythmUnknown.  That is what stops a track too short or too quiet
+// to analyse from being re-analysed on every launch forever.
+NSString * const TrackKeyDetectedBPM      = @"detectedBeatsPerMinute";
+NSString * const TrackKeyDetectedRhythm   = @"detectedRhythm";
+
 // This is the duration as reported by -[AVURLAsset duration]
 NSString * const TrackKeyDuration = @"duration";
 

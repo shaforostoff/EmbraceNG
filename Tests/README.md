@@ -437,3 +437,45 @@ as a watchdog kill rather than hanging.
 
 The harness writes to a defaults domain named after its own executable, not the
 app's, and clears it on the way out; it asserts both.
+
+---
+
+# Tempo and rhythm
+
+`BPMAnalyzerTests.mm` covers `Source/BPMAnalyzer`, the shell around the
+vendored `bpmcore` that the worker runs over every track it decodes.
+
+```bash
+Tests/run-bpm-analyzer-tests.sh   # headless; writes two WAVs into $TMPDIR
+```
+
+20 checks, all passing on macOS 14.8.8. `bpmcore` has its own suite upstream
+and is not re-tested here -- what is tested is everything between a file on
+disk and an answer, which is the part this project owns.
+
+The two that matter most go through a real file. A synthetic
+`AudioBufferList` can be fed to the analyzer all day without proving the layout
+is right, because both channels of a test signal are usually the same signal: a
+downmix that reads one buffer twice looks perfectly correct. So the suite writes
+a WAV whose left channel carries the clicks and whose right is silent, decodes
+it with the same `HugAudioFile` the worker uses, and runs the worker's own loop
+over it. That is what pins the non-interleaved float32 layout, the short final
+buffer, and the frame count `ExtAudioFile` writes back.
+
+The rest: 120 BPM recovered to within 0.7 BPM; the same answer whatever size
+the reads happen to be, duplicated to stereo, or with one channel silent; 96 BPM
+at 48kHz, which is the resampler path every modern file takes, since 48kHz is
+not the rate the model was fitted at times a power of two; silence, half a
+second of audio and no audio at all all reporting `Unknown` rather than a
+guess; and every entry point surviving a null analyzer, which is what the worker
+holds if `BPMAnalyzerCreate` ever fails.
+
+One check is a guard rather than a measurement. This analysis rides on a decode
+the app already performs while the DJ waits for a track to become playable, so
+it has to disappear into it: three minutes of stereo takes **0.22s**, about 820x
+realtime, against a cap of one second.
+
+`testDirectFeed` also asserts that the rhythm name is one of the six the rest
+of the app expects. That is a contract with no compiler behind it: the names
+cross a process boundary and a state file as strings, so nothing catches a
+`bpmcore` that started reporting a sixth class except a check that says so.

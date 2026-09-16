@@ -326,6 +326,7 @@
         @"comments",
         @"grouping",
         @"beatsPerMinute",
+        @"detectedBeatsPerMinute",
         @"trackStatus",
         @"trackLabel",
         @"duplicate"
@@ -721,7 +722,7 @@
                 string = [track artist];
 
             } else if (attribute == TrackViewAttributeBeatsPerMinute) {
-                NSInteger bpm = [track beatsPerMinute];
+                NSInteger bpm = [track effectiveBeatsPerMinute];
                 if (bpm) string = [NSNumberFormatter localizedStringFromNumber:@(bpm) numberStyle:NSNumberFormatterDecimalStyle];
 
             } else if (attribute == TrackViewAttributeComments) {

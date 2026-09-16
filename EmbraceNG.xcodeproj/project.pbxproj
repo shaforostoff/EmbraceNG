@@ -80,6 +80,14 @@
 		556ACE24187ABB8100AED4BC /* EditSystemEffectWindow.xib in Resources */ = {isa = PBXBuildFile; fileRef = 556ACE23187ABB8100AED4BC /* EditSystemEffectWindow.xib */; };
 		556ACE2F187B901400AED4BC /* WaveformView.m in Sources */ = {isa = PBXBuildFile; fileRef = 556ACE2E187B901400AED4BC /* WaveformView.m */; };
 		556ACE36187BB43A00AED4BC /* WrappedUtils.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 556ACE35187BB43A00AED4BC /* WrappedUtils.cpp */; };
+		DEC1DE0000000000000000A0 /* BPMAnalyzer.mm in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000051 /* BPMAnalyzer.mm */; };
+		DEC1DE0000000000000000A1 /* analyse.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000065 /* analyse.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
+		DEC1DE0000000000000000A2 /* odf.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000066 /* odf.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
+		DEC1DE0000000000000000A3 /* real_fft.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000067 /* real_fft.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
+		DEC1DE0000000000000000A4 /* resample.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000068 /* resample.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
+		DEC1DE0000000000000000A5 /* rhythm.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000069 /* rhythm.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
+		DEC1DE0000000000000000A6 /* tempo.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE00000000000000006A /* tempo.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
+		DEC1DE0000000000000000A7 /* pffft.c in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000071 /* pffft.c */; settings = {COMPILER_FLAGS = "-O2 -Wno-missing-prototypes -Wno-shadow"; }; };
 		DEC1DE000000000000000011 /* declick_core.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000002 /* declick_core.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
 		DEC1DE000000000000000014 /* ParameterFormView.m in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000008 /* ParameterFormView.m */; };
 		DEC1DE000000000000000012 /* dehum_core.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000004 /* dehum_core.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
@@ -321,6 +329,23 @@
 		556ACE2E187B901400AED4BC /* WaveformView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = WaveformView.m; path = Source/WaveformView.m; sourceTree = SOURCE_ROOT; };
 		556ACE34187BB43A00AED4BC /* WrappedUtils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = WrappedUtils.h; path = Source/WrappedUtils.h; sourceTree = "<group>"; };
 		556ACE35187BB43A00AED4BC /* WrappedUtils.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = WrappedUtils.cpp; path = Source/WrappedUtils.cpp; sourceTree = "<group>"; };
+		DEC1DE000000000000000050 /* BPMAnalyzer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = BPMAnalyzer.h; path = Source/BPMAnalyzer.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000051 /* BPMAnalyzer.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = BPMAnalyzer.mm; path = Source/BPMAnalyzer.mm; sourceTree = "<group>"; };
+		DEC1DE000000000000000058 /* PROVENANCE.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; name = PROVENANCE.md; path = Vendor/PROVENANCE.md; sourceTree = "<group>"; };
+		DEC1DE000000000000000060 /* bpmcore.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = bpmcore.h; path = Vendor/bpmcore/bpmcore.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000061 /* internal.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = internal.h; path = Vendor/bpmcore/internal.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000062 /* parallel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = parallel.h; path = Vendor/bpmcore/parallel.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000063 /* real_fft.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = real_fft.h; path = Vendor/bpmcore/real_fft.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000064 /* rhythm_model.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = rhythm_model.h; path = Vendor/bpmcore/rhythm_model.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000065 /* analyse.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = analyse.cpp; path = Vendor/bpmcore/analyse.cpp; sourceTree = "<group>"; };
+		DEC1DE000000000000000066 /* odf.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = odf.cpp; path = Vendor/bpmcore/odf.cpp; sourceTree = "<group>"; };
+		DEC1DE000000000000000067 /* real_fft.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = real_fft.cpp; path = Vendor/bpmcore/real_fft.cpp; sourceTree = "<group>"; };
+		DEC1DE000000000000000068 /* resample.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = resample.cpp; path = Vendor/bpmcore/resample.cpp; sourceTree = "<group>"; };
+		DEC1DE000000000000000069 /* rhythm.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = rhythm.cpp; path = Vendor/bpmcore/rhythm.cpp; sourceTree = "<group>"; };
+		DEC1DE00000000000000006A /* tempo.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = tempo.cpp; path = Vendor/bpmcore/tempo.cpp; sourceTree = "<group>"; };
+		DEC1DE000000000000000070 /* pffft.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = pffft.h; path = Vendor/pffft/pffft.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000071 /* pffft.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = pffft.c; path = Vendor/pffft/pffft.c; sourceTree = "<group>"; };
+		DEC1DE000000000000000072 /* COPYING */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = COPYING; path = Vendor/pffft/COPYING; sourceTree = "<group>"; };
 		DEC1DE000000000000000001 /* declick_core.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = declick_core.h; path = Source/declick_core.h; sourceTree = "<group>"; };
 		DEC1DE000000000000000007 /* ParameterFormView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ParameterFormView.h; path = Source/ParameterFormView.h; sourceTree = "<group>"; };
 		DEC1DE000000000000000008 /* ParameterFormView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = ParameterFormView.m; path = Source/ParameterFormView.m; sourceTree = "<group>"; };
@@ -523,6 +548,8 @@
 		5514B6401CDEE64200F238B7 /* Worker */ = {
 			isa = PBXGroup;
 			children = (
+				DEC1DE000000000000000050 /* BPMAnalyzer.h */,
+				DEC1DE000000000000000051 /* BPMAnalyzer.mm */,
 				5514B6781CDF4AA200F238B7 /* Worker-Info.plist */,
 				5582F7ED18A385570046A24B /* LoudnessMeasurer.h */,
 				5582F7EC18A385570046A24B /* LoudnessMeasurer.m */,
@@ -630,6 +657,44 @@
 			name = Hug;
 			sourceTree = "<group>";
 		};
+		DEC1DE000000000000000080 /* Vendor */ = {
+			isa = PBXGroup;
+			children = (
+				DEC1DE000000000000000058 /* PROVENANCE.md */,
+				DEC1DE000000000000000081 /* bpmcore */,
+				DEC1DE000000000000000082 /* pffft */,
+			);
+			name = Vendor;
+			sourceTree = "<group>";
+		};
+		DEC1DE000000000000000081 /* bpmcore */ = {
+			isa = PBXGroup;
+			children = (
+				DEC1DE000000000000000060 /* bpmcore.h */,
+				DEC1DE000000000000000061 /* internal.h */,
+				DEC1DE000000000000000062 /* parallel.h */,
+				DEC1DE000000000000000063 /* real_fft.h */,
+				DEC1DE000000000000000064 /* rhythm_model.h */,
+				DEC1DE000000000000000065 /* analyse.cpp */,
+				DEC1DE000000000000000066 /* odf.cpp */,
+				DEC1DE000000000000000067 /* real_fft.cpp */,
+				DEC1DE000000000000000068 /* resample.cpp */,
+				DEC1DE000000000000000069 /* rhythm.cpp */,
+				DEC1DE00000000000000006A /* tempo.cpp */,
+			);
+			name = bpmcore;
+			sourceTree = "<group>";
+		};
+		DEC1DE000000000000000082 /* pffft */ = {
+			isa = PBXGroup;
+			children = (
+				DEC1DE000000000000000070 /* pffft.h */,
+				DEC1DE000000000000000071 /* pffft.c */,
+				DEC1DE000000000000000072 /* COPYING */,
+			);
+			name = pffft;
+			sourceTree = "<group>";
+		};
 		DEC1DE000000000000000021 /* Restoration */ = {
 			isa = PBXGroup;
 			children = (
@@ -710,6 +775,7 @@
 				55DD53A518B9FC3E0084628D /* Utils */,
 				551A79492C8E3E13006BB34A /* Crash Report */,
 				556ACE30187BB3F800AED4BC /* Wrapped C++ */,
+				DEC1DE000000000000000080 /* Vendor */,
 				DEC1DE000000000000000021 /* Restoration */,
 				DEC1DE000000000000000022 /* Parametric EQ */,
 				5514B6401CDEE64200F238B7 /* Worker */,
@@ -1225,6 +1291,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DEC1DE0000000000000000A0 /* BPMAnalyzer.mm in Sources */,
+				DEC1DE0000000000000000A1 /* analyse.cpp in Sources */,
+				DEC1DE0000000000000000A2 /* odf.cpp in Sources */,
+				DEC1DE0000000000000000A3 /* real_fft.cpp in Sources */,
+				DEC1DE0000000000000000A4 /* resample.cpp in Sources */,
+				DEC1DE0000000000000000A5 /* rhythm.cpp in Sources */,
+				DEC1DE0000000000000000A6 /* tempo.cpp in Sources */,
+				DEC1DE0000000000000000A7 /* pffft.c in Sources */,
 				553E77921E6ABF4E00DA988B /* MetadataParser.m in Sources */,
 				555953F721BA0C300032EE54 /* HugUtils.m in Sources */,
 				5514B6691CDF46C700F238B7 /* Log.m in Sources */,

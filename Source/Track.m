@@ -31,6 +31,8 @@ static NSString * const sPlayedTimeKey        = @"playedTime";
 @property (nonatomic) NSString *grouping;
 @property (nonatomic) NSString *comments;
 @property (nonatomic) NSInteger beatsPerMinute;
+@property (nonatomic) double detectedBeatsPerMinute;
+@property (nonatomic) NSString *detectedRhythm;
 @property (nonatomic) NSTimeInterval startTime;
 @property (nonatomic) NSTimeInterval stopTime;
 @property (nonatomic) NSTimeInterval duration;
@@ -63,6 +65,7 @@ static NSString * const sPlayedTimeKey        = @"playedTime";
 }
 
 @dynamic playDuration, silenceAtStart, silenceAtEnd, tonality;
+@dynamic effectiveBeatsPerMinute;
 
 
 static NSURL *sGetStateDirectoryURL()
@@ -385,6 +388,9 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
     if (_composer)         [state setObject:_composer             forKey:TrackKeyComposer];
     if (_databaseID)       [state setObject:@(_databaseID)        forKey:TrackKeyDatabaseID];
     if (_decodedDuration)  [state setObject:@(_decodedDuration)   forKey:TrackKeyDecodedDuration];
+    if (_detectedRhythm)   [state setObject:_detectedRhythm       forKey:TrackKeyDetectedRhythm];
+    if (_detectedBeatsPerMinute)
+                           [state setObject:@(_detectedBeatsPerMinute) forKey:TrackKeyDetectedBPM];
     if (_duration)         [state setObject:@(_duration)          forKey:TrackKeyDuration];
     if (_energyLevel)      [state setObject:@(_energyLevel)       forKey:TrackKeyEnergyLevel];
     if (_expectedDuration) [state setObject:@(_expectedDuration)  forKey:TrackKeyExpectedDuration];
@@ -462,7 +468,10 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
     [self _readMetadataViaManagerWithFileURL:externalURL];
     [self _requestWorkerCommand:WorkerTrackCommandReadMetadata];
 
-    if (!_overviewData) {
+    // A track carrying an overview but no rhythm was analysed by a build that
+    // did not measure one.  Asking again costs a background decode once, and
+    // the worker writes a rhythm whatever it finds, so this cannot repeat.
+    if (!_overviewData || !_detectedRhythm) {
         if (_priorityAnalysisRequested) {
             [self _requestWorkerCommand:WorkerTrackCommandReadLoudnessImmediate];
         } else {
@@ -951,6 +960,14 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
 - (Tonality) tonality
 {
     return GetTonalityForString([self initialKey]);
+}
+
+
+- (NSInteger) effectiveBeatsPerMinute
+{
+    if (_beatsPerMinute) return _beatsPerMinute;
+
+    return (NSInteger)llround(_detectedBeatsPerMinute);
 }
 
 
