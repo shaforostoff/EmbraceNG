@@ -49,6 +49,23 @@ It runs on pffft rather than the portable scalar transform foo_rubato ships --
 about six times faster at these sizes, using SSE on Intel and NEON on Apple
 silicon.
 
+Measurements are **not** kept between runs. Every track is analysed once per
+launch rather than once ever, because a measurement is a guess about the file
+and the state file is not the file: keeping one keeps a bad reading too, and
+there is nowhere in the interface to clear it. Re-measuring each launch means a
+fix to the analysis reaches every track by being installed.
+
+What that costs is the decode it rides on -- a set list that was already scanned
+is scanned again in the background at startup, and a large one will have that
+running for a while after launch. `PERSIST_DETECTED_BPM_AND_RHYTHM` at the top
+of `Source/Track.m` turns it into once ever; it also works from the build
+without touching the file:
+
+    GCC_PREPROCESSOR_DEFINITIONS = $(inherited) PERSIST_DETECTED_BPM_AND_RHYTHM=1
+
+Off, the two values are dropped on the way in as well as never written, so it
+means off whatever an earlier build happened to leave on disk.
+
 ## Cortina presets
 
 A cortina is not a tango, and the declick, dehum and EQ settings that a 1940s

@@ -17,6 +17,29 @@ NSString * const TrackDidModifyDurationNotificationName    = @"TrackDidModifyDur
 
 #define DUMP_UNKNOWN_TAGS 0
 
+// Whether a measured tempo and rhythm survive a relaunch.
+//
+// Off, which means every track is analysed once per launch rather than once
+// ever.  The measurement rides a decode the worker performs anyway, so what
+// this costs is the decode: a set list that was already scanned is scanned
+// again in the background at startup, and a large one will have that running
+// for a while after launch.
+//
+// It is off because a measurement is a guess about the file and a state file is
+// not the file.  Keeping one means a bad reading is kept too -- a side the
+// classifier got wrong stays wrong for as long as that track is in the set
+// list, and there is nowhere in the interface to clear it.  Re-measuring each
+// launch means a fix to the analysis reaches every track by being installed,
+// with nothing to invalidate.  Turn it on when the analysis is settled and the
+// startup cost is the thing that matters.
+//
+// Overridable from the build, so a scheme can flip it without touching this:
+//     GCC_PREPROCESSOR_DEFINITIONS = $(inherited) PERSIST_DETECTED_BPM_AND_RHYTHM=1
+//
+#ifndef PERSIST_DETECTED_BPM_AND_RHYTHM
+#define PERSIST_DETECTED_BPM_AND_RHYTHM 0
+#endif
+
 static NSString * const sLabelKey             = @"trackLabel";
 static NSString * const sStopsAfterPlayingKey = @"stopsAfterPlaying";
 static NSString * const sIgnoresAutoGapKey    = @"ignoresAutoGap";
@@ -164,6 +187,24 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
     NSDictionary *state = stateURL ? [NSDictionary dictionaryWithContentsOfURL:stateURL] : nil;
     
     if (!state) return nil;
+
+#if !PERSIST_DETECTED_BPM_AND_RHYTHM
+    // Gating the write alone would leave a state file written by a build that
+    // had this on still being read by one that has it off -- and since an
+    // already-loaded rhythm is exactly what -_handleResolvedExternalURL: reads
+    // as "measured already", the old values would be used and never refreshed
+    // until some other change happened to rewrite the file.  Dropping them here
+    // makes off mean off whatever is on disk.
+    //
+    if ([state objectForKey:TrackKeyDetectedRhythm] || [state objectForKey:TrackKeyDetectedBPM]) {
+        NSMutableDictionary *withoutMeasurement = [state mutableCopy];
+
+        [withoutMeasurement removeObjectForKey:TrackKeyDetectedRhythm];
+        [withoutMeasurement removeObjectForKey:TrackKeyDetectedBPM];
+
+        state = withoutMeasurement;
+    }
+#endif
 
     Track *track = [[Track alloc] _initWithUUID:UUID state:state];
 
@@ -388,9 +429,11 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
     if (_composer)         [state setObject:_composer             forKey:TrackKeyComposer];
     if (_databaseID)       [state setObject:@(_databaseID)        forKey:TrackKeyDatabaseID];
     if (_decodedDuration)  [state setObject:@(_decodedDuration)   forKey:TrackKeyDecodedDuration];
+#if PERSIST_DETECTED_BPM_AND_RHYTHM
     if (_detectedRhythm)   [state setObject:_detectedRhythm       forKey:TrackKeyDetectedRhythm];
     if (_detectedBeatsPerMinute)
                            [state setObject:@(_detectedBeatsPerMinute) forKey:TrackKeyDetectedBPM];
+#endif
     if (_duration)         [state setObject:@(_duration)          forKey:TrackKeyDuration];
     if (_energyLevel)      [state setObject:@(_energyLevel)       forKey:TrackKeyEnergyLevel];
     if (_expectedDuration) [state setObject:@(_expectedDuration)  forKey:TrackKeyExpectedDuration];
