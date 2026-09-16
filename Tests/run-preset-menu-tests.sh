@@ -15,6 +15,7 @@ cd "$(dirname "$0")/.."
 
 SRC="Tests/PresetMenuTests.m \
      Source/EditEffectController.m \
+     Source/RecentPresets.m \
      Source/Effect.m \
      Source/EffectType.m \
      Source/EffectAdditions.m \

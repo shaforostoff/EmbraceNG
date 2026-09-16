@@ -49,6 +49,50 @@ It runs on pffft rather than the portable scalar transform foo_rubato ships --
 about six times faster at these sizes, using SSE on Intel and NEON on Apple
 silicon.
 
+## Cortina presets
+
+A cortina is not a tango, and the declick, dehum and EQ settings that a 1940s
+shellac transfer needs are actively wrong for a modern recording played to clear
+the floor.
+
+So: **save a preset called `cortina` in an effect, and that effect switches to it
+whenever the track playing is not a tango, vals, milonga or candombe.** The
+moment one of those four comes round again, the effect goes back to exactly what
+it was holding before.
+
+Saving the preset under that name is the whole of the setup, and deleting it is
+the whole of the undo. An effect with no such preset is never touched, so this
+is opt-in per effect: the Parametric EQ can follow the cortinas while Declick
+stays where it is. The name is matched against the seven recent presets in each
+effect's "..." menu, without its extension and ignoring case and accents.
+
+What the track is comes from the genre tag where the file has one. Compound and
+awkward spellings are expected -- `Tango Milonga`, `Tango negro`, `Vals criollo`,
+`Milonga-Candombe`, `Neotango` all read correctly, and the narrower of two words
+wins, so `Tango Vals` is a vals. A tag naming none of the four is an answer
+rather than a shrug: a track tagged `Rock` is a cortina.
+
+Where there is no genre tag, the rhythm measured above is used instead. That
+path has no candombe class in it and does not need one: candombes classify as
+milonga, which upstream chose because the milonga prior puts their BPM on the
+level they are tapped at, and which is exactly right here too.
+
+Where there is neither -- no tag, and a track too short or too quiet to measure
+-- nothing is switched. The two ways to be wrong are not equal. Leaving your own
+settings on a cortina costs one track; putting a cortina preset on an
+unrecognised tango takes the restoration off a track that needs it, in front of
+a floor.
+
+Two things are worth knowing:
+
+* **It is a restore, not an undo.** Settings changed by hand while a cortina
+  plays sit on top of a state that is about to be put back, and go with it. The
+  effects window is for between tandas, which is exactly when a cortina is
+  playing, so this is the one sharp edge.
+* **What gets written to disk is your settings, not the cortina preset.** A
+  quit, a crash or an edit to the chain in the middle of a cortina all leave the
+  chain you built in the preferences, not the one that happened to be audible.
+
 ## Reading crash reports
 
 EscapePod writes crash reports to `~/Library/Application Support/EmbraceNG/Crashes` as raw hex — per-thread backtraces, the crashing thread's registers and a binary image list, with no symbol names, because symbolication was meant to happen on the telemetry server. `Build/Symbolicate.py` turns one into a readable backtrace:

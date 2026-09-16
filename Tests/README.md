@@ -475,7 +475,85 @@ the app already performs while the DJ waits for a track to become playable, so
 it has to disappear into it: three minutes of stereo takes **0.22s**, about 820x
 realtime, against a cap of one second.
 
-`testDirectFeed` also asserts that the rhythm name is one of the six the rest
-of the app expects. That is a contract with no compiler behind it: the names
-cross a process boundary and a state file as strings, so nothing catches a
-`bpmcore` that started reporting a sixth class except a check that says so.
+`testDirectFeed` also asserts that the rhythm name is one of the six
+`DanceRhythm.m` maps. That is one end of a contract with no compiler behind it
+-- the names cross a process boundary and a state file as strings -- and
+`CortinaTests` holds the other.
+
+---
+
+# Cortina switching
+
+`CortinaTests.m` covers the rest of it: how a track's rhythm is read, how the
+preset named `cortina` is found, and what `CortinaEffects` does with the two
+answers.
+
+```bash
+Tests/run-cortina-tests.sh   # headless; instantiates audio units, renders nothing
+```
+
+84 checks, all passing on macOS 14.8.8.
+
+**Reading a genre tag** is a table of what collections really hold, and the
+compound tags are why it is a table. "Tango Vals" is a vals and "Tango Milonga"
+is a milonga; reading either as a tango would be right about the family and
+wrong about the dance, so the narrower word wins. Accents, case, separators and
+`Neotango` are all folded through. Nothing in the second half of the table --
+Rock, Swing, Latin, Instrumental, Jazz Vocal -- may read as anything danceable.
+
+`Waltz` is in that second half deliberately. A Strauss waltz is a cortina at a
+milonga, and treating the English spelling as a vals would take the cortina
+settings off exactly the track they were meant for.
+
+**Reading a measurement** is exact where the tag is fuzzy, because both ends of
+it are ours: the five names are `bpmcore`'s `rhythm_name()` and the sixth is
+`BPMAnalyzerRhythmUnknown`. A name outside the set means `bpmcore` changed
+underneath us, and reads as `Unknown` rather than being guessed at.
+
+**The rule** -- tag first, measurement second -- has one case that is easy to
+get wrong, and it has a check of its own. A tag reading "Rock" names none of the
+four, and *that is an answer*. Falling through to the measurement there would
+put the tango settings back on a cortina that `bpmcore` happened to call a
+tango.
+
+There is also a check that an untagged candombe is danced. `bpmcore` has no
+candombe class and does not need one: candombes classify as milonga, which
+upstream chose for the tempo -- the milonga prior is what puts their BPM on the
+level they are tapped at -- and which happens to be exactly right here too.
+
+**The switch** runs against real `AUAudioUnit`s and real preset files, and
+measures a parameter after every step rather than trusting that a load
+happened, so a `-setFullState:` that quietly does nothing fails the suite. Four
+of these are the ones worth having:
+
+- **a second cortina in a row changes nothing.** Saving again on the second
+  would overwrite the held settings with the cortina preset, and the tanda
+  would never come back.
+- **what would be written to disk is the DJ's setting**, measured by loading
+  `-persistentAudioPresetForEffect:` into a fresh effect and reading its
+  parameter. Without this, quitting during a cortina persists the cortina
+  preset as the chain and the tanda settings are gone for good.
+- **a track we cannot identify is left alone.** The two ways to be wrong are
+  not equal.
+- **an effect deleted from the chain mid-cortina is forgotten**, rather than
+  leaving a held state claiming a switch that no longer exists.
+
+`CortinaEffects` is handed a stand-in for `Track`. It asks a track exactly one
+question, and building a real one drags in the app delegate, the worker
+connection and the on-disk state directory to answer it; the rule that answers
+it is `GetDanceRhythm()`, tested directly a few checks earlier.
+
+## One thing the suite found about itself
+
+The first run reported two failures that were the harness's own. Both phases
+wrote `cortina.aupreset` into one directory, so the second phase's file landed
+where the first had registered it *for a different effect type*, and a preset
+saved from `AULowpass` was loaded onto `AUDynamicsProcessor`.
+
+That cannot happen in the app -- the recent list is keyed on
+`EffectType.fullName`, so a cortina preset is only ever looked up for the type
+that saved it -- but it is worth recording that nothing stops it if it ever
+does. `EmbraceAudioUnitFullStateIsWellFormed` validates the blob's shape and
+deliberately not its provenance, so a state from the wrong unit is installed
+rather than refused. That is pre-existing and reachable from **Load Preset…**
+already. Each phase now gets its own directory and its own list.

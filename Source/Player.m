@@ -4,6 +4,7 @@
 #import "Player.h"
 #import "Track.h"
 #import "Effect.h"
+#import "CortinaEffects.h"
 #import "AppDelegate.h"
 #import "EffectType.h"
 #import "Preferences.h"
@@ -700,6 +701,12 @@ static OSStatus sHandleAudioDevicePropertyChanged(AudioObjectID inObjectID, UInt
         }
     }
 
+    // A cortina wants different settings from a tanda, and this is the one
+    // place that knows which is about to play.  It is also past the point where
+    // the track's analysis is known to have finished, which is what the rhythm
+    // is read from when the file carries no genre tag.
+    [[CortinaEffects sharedInstance] updateWithTrack:track effects:_effects];
+
     [self _updateLoudnessAndPreAmp];
 
     if (![_engine playAudioFile:file startTime:([track startTime] + offset) stopTime:[track stopTime] padding:padding]) {
@@ -803,9 +810,17 @@ static OSStatus sHandleAudioDevicePropertyChanged(AudioObjectID inObjectID, UInt
 - (void) saveEffectState
 {
     NSMutableArray *effectsStateArray = [NSMutableArray arrayWithCapacity:[_effects count]];
+
+    CortinaEffects *cortinaEffects = [CortinaEffects sharedInstance];
     
     for (Effect *effect in _effects) {
-        NSDictionary *dictionary = [effect stateDictionary];
+        // What the user chose, which is not what is audible while a cortina
+        // preset is loaded over it.  A quit or a crash in the middle of a
+        // cortina would otherwise persist the cortina preset as the chain, and
+        // the settings it was covering would be gone for good.
+        NSDictionary *preset = [cortinaEffects persistentAudioPresetForEffect:effect];
+
+        NSDictionary *dictionary = [effect stateDictionaryUsingAudioPreset:preset];
         if (dictionary) [effectsStateArray addObject:dictionary];
     }
 

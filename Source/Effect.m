@@ -12,7 +12,8 @@ static NSString *sNameKey = @"name";
 static NSString *sInfoKey = @"info";
 static NSString *sUUIDKey = @"UUID";
 
-NSString * const EffectDidDeallocNotification = @"EffectDidDealloc";
+NSString * const EffectDidDeallocNotification     = @"EffectDidDealloc";
+NSString * const EffectDidChangeStateNotification = @"EffectDidChangeState";
 
 
 @implementation Effect {
@@ -178,6 +179,13 @@ NSString * const EffectDidDeallocNotification = @"EffectDidDealloc";
         }
     }
 
+    // Only the three public entry points reach here, and every one of them is a
+    // wholesale replacement an open editor would otherwise keep drawing the old
+    // values for.  The construction paths use -_applyFullState:toAudioUnit:
+    // directly and are deliberately quiet: there is nothing watching an effect
+    // that does not exist yet.
+    [[NSNotificationCenter defaultCenter] postNotificationName:EffectDidChangeStateNotification object:self];
+
     return YES;
 }
 
@@ -199,6 +207,18 @@ NSString * const EffectDidDeallocNotification = @"EffectDidDealloc";
 }
 
 
+- (NSDictionary *) audioPreset
+{
+    return [_audioUnit fullState];
+}
+
+
+- (BOOL) loadAudioPreset:(NSDictionary *)preset
+{
+    return [self _setFullState:preset];
+}
+
+
 - (void) restoreDefaultValues
 {
     [self _setFullState:_defaultFullState];
@@ -207,7 +227,12 @@ NSString * const EffectDidDeallocNotification = @"EffectDidDealloc";
 
 - (NSDictionary *) stateDictionary
 {
-    NSDictionary *fullState = [_audioUnit fullState];
+    return [self stateDictionaryUsingAudioPreset:[_audioUnit fullState]];
+}
+
+
+- (NSDictionary *) stateDictionaryUsingAudioPreset:(NSDictionary *)fullState
+{
     if (!fullState) fullState = [NSDictionary dictionary];
     
     NSError  *error = nil;

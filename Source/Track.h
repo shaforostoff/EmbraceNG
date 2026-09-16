@@ -3,6 +3,8 @@
 
 #import <Foundation/Foundation.h>
 
+#import "DanceRhythm.h"
+
 extern NSString * const TrackDidModifyTitleNotificationName;
 extern NSString * const TrackDidModifyExternalURLNotificationName;
 extern NSString * const TrackDidModifyDurationNotificationName;
@@ -108,15 +110,20 @@ typedef NS_ENUM(NSInteger, TrackLabel) {
 // -detectedBeatsPerMinute is the tempo at the level a dancer taps -- the beat
 // for a tango, the bar for a vals or a milonga -- and is 0 where the track was
 // too short or too quiet to measure.  -detectedRhythm is one of bpmcore's class
-// names -- see BPMAnalyzer.h.  It is non-nil once the track has been through
-// the analysis at all, including when the analysis came back with nothing,
-// which is what stops such a track being re-analysed on every launch.
+// names; see DanceRhythm.h.  It is non-nil once the track has been through the
+// analysis at all, including when the analysis came back with nothing, which is
+// what stops such a track being re-analysed on every launch.
 @property (nonatomic, readonly) double    detectedBeatsPerMinute;
 @property (nonatomic, readonly) NSString *detectedRhythm;
 
 // The BPM tag where the file carried one, and the measurement rounded to the
 // nearest whole BPM where it did not.
 @property (nonatomic, readonly) NSInteger effectiveBeatsPerMinute;
+
+// What the floor will dance to: the genre tag where there is one, and the
+// analysis where there is not.  DanceRhythmUnknown only when neither had
+// anything to say.
+@property (nonatomic, readonly) DanceRhythm danceRhythm;
 
 @property (nonatomic, readonly) NSTimeInterval decodedDuration;
 @property (nonatomic, readonly) double  trackLoudness;

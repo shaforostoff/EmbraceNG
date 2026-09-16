@@ -4,68 +4,13 @@
 #import "EditEffectController.h"
 #import "Effect.h"
 #import "EffectAdditions.h"
+#import "RecentPresets.h"
 
-
-// Presets the user has loaded or saved, most recent first.  Kept per effect
-// type -- an .aupreset only means anything to the unit that wrote it -- as
-// NSUserDefaults[sRecentPresetsKey] = { effect type full name: [ path, ... ] }.
-//
-static NSString * const sRecentPresetsKey     = @"recent-presets";
-static const NSUInteger sMaximumRecentPresets = 7;
 
 // Marks the items -_updateRecentPresetsInMenu: owns, so a rebuild can pull its
 // previous ones back out without disturbing what the xib puts there.
 //
 static const NSInteger sRecentPresetTag = 8001;
-
-
-static NSArray<NSString *> *sGetRecentPresetPaths(NSString *typeName)
-{
-    if (!typeName) return @[ ];
-
-    NSDictionary *pathsByType = [[NSUserDefaults standardUserDefaults] objectForKey:sRecentPresetsKey];
-    if (![pathsByType isKindOfClass:[NSDictionary class]]) return @[ ];
-
-    NSArray *paths = [pathsByType objectForKey:typeName];
-    if (![paths isKindOfClass:[NSArray class]]) return @[ ];
-
-    NSMutableArray *result = [NSMutableArray array];
-
-    for (NSString *path in paths) {
-        if ([path isKindOfClass:[NSString class]]) [result addObject:path];
-    }
-
-    return result;
-}
-
-
-static void sAddRecentPresetPath(NSString *typeName, NSURL *fileURL)
-{
-    NSString *path = [[fileURL URLByStandardizingPath] path];
-    if (!typeName || !path) return;
-
-    NSMutableArray *paths = [sGetRecentPresetPaths(typeName) mutableCopy];
-
-    // Re-using a preset moves it to the front rather than listing it twice
-    [paths removeObject:path];
-    [paths insertObject:path atIndex:0];
-
-    while ([paths count] > sMaximumRecentPresets) {
-        [paths removeLastObject];
-    }
-
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-
-    NSDictionary *oldPathsByType = [defaults objectForKey:sRecentPresetsKey];
-
-    NSMutableDictionary *pathsByType = [oldPathsByType isKindOfClass:[NSDictionary class]] ?
-        [oldPathsByType mutableCopy] :
-        [NSMutableDictionary dictionary];
-
-    [pathsByType setObject:paths forKey:typeName];
-
-    [defaults setObject:pathsByType forKey:sRecentPresetsKey];
-}
 
 
 static NSInteger sIndexOfItemWithAction(NSMenu *menu, SEL action)
@@ -107,6 +52,8 @@ static NSInteger sIndexOfItemWithAction(NSMenu *menu, SEL action)
 
 - (void) dealloc
 {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+
     @try {
         [[self effect] removeObserver:self forKeyPath:@"bypass"];
     } @finally { }
@@ -128,6 +75,20 @@ static NSInteger sIndexOfItemWithAction(NSMenu *menu, SEL action)
     [_actionsMenu setDelegate:self];
 
     [[self effect] addObserver:self forKeyPath:@"bypass" options:0 context:NULL];
+
+    // Settings can now be replaced by something other than this window -- the
+    // cortina switch does it between tracks -- and the controls have to be
+    // redrawn from the new values whoever installed them.
+    [[NSNotificationCenter defaultCenter] addObserver: self
+                                             selector: @selector(_handleEffectDidChangeState:)
+                                                 name: EffectDidChangeStateNotification
+                                               object: [self effect]];
+}
+
+
+- (void) _handleEffectDidChangeState:(NSNotification *)note
+{
+    [self reloadData];
 }
 
 
@@ -213,7 +174,7 @@ static NSInteger sIndexOfItemWithAction(NSMenu *menu, SEL action)
     // A preset can be missing without being forgotten -- remounting the volume
     // it lives on brings it back -- so this filters the menu, not the list.
     //
-    for (NSString *path in sGetRecentPresetPaths([[_effect type] fullName])) {
+    for (NSString *path in GetRecentPresetPaths([[_effect type] fullName])) {
         if ([fileManager fileExistsAtPath:path]) {
             [result addObject:[NSURL fileURLWithPath:path]];
         }
@@ -264,9 +225,12 @@ static NSInteger sIndexOfItemWithAction(NSMenu *menu, SEL action)
 {
     if (![[self effect] loadAudioPresetAtFileURL:fileURL]) return;
 
-    sAddRecentPresetPath([[_effect type] fullName], fileURL);
+    AddRecentPresetPath([[_effect type] fullName], fileURL);
 
-    [self reloadData];
+    // No -reloadData here: installing the state posts
+    // EffectDidChangeStateNotification, which this controller is listening for.
+    // Doing both redrew the editor twice per load, and the second mechanism
+    // would only cover the loads that come through this window anyway.
 }
 
 
@@ -320,7 +284,7 @@ static NSInteger sIndexOfItemWithAction(NSMenu *menu, SEL action)
             NSURL *fileURL = [savePanel URL];
 
             if ([weakEffect saveAudioPresetAtFileURL:fileURL]) {
-                sAddRecentPresetPath(typeName, fileURL);
+                AddRecentPresetPath(typeName, fileURL);
             }
         }
     }];
@@ -330,7 +294,6 @@ static NSInteger sIndexOfItemWithAction(NSMenu *menu, SEL action)
 - (IBAction) restoreDefaultValues:(id)sender
 {
     [[self effect] restoreDefaultValues];
-    [self reloadData];
 }
 
 

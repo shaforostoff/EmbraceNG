@@ -65,7 +65,7 @@ static NSString * const sPlayedTimeKey        = @"playedTime";
 }
 
 @dynamic playDuration, silenceAtStart, silenceAtEnd, tonality;
-@dynamic effectiveBeatsPerMinute;
+@dynamic effectiveBeatsPerMinute, danceRhythm;
 
 
 static NSURL *sGetStateDirectoryURL()
@@ -968,6 +968,12 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
     if (_beatsPerMinute) return _beatsPerMinute;
 
     return (NSInteger)llround(_detectedBeatsPerMinute);
+}
+
+
+- (DanceRhythm) danceRhythm
+{
+    return GetDanceRhythm([self genre], _detectedRhythm);
 }
 
 

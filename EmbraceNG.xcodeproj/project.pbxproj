@@ -80,6 +80,9 @@
 		556ACE24187ABB8100AED4BC /* EditSystemEffectWindow.xib in Resources */ = {isa = PBXBuildFile; fileRef = 556ACE23187ABB8100AED4BC /* EditSystemEffectWindow.xib */; };
 		556ACE2F187B901400AED4BC /* WaveformView.m in Sources */ = {isa = PBXBuildFile; fileRef = 556ACE2E187B901400AED4BC /* WaveformView.m */; };
 		556ACE36187BB43A00AED4BC /* WrappedUtils.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 556ACE35187BB43A00AED4BC /* WrappedUtils.cpp */; };
+		DEC1DE000000000000000090 /* DanceRhythm.m in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000053 /* DanceRhythm.m */; };
+		DEC1DE000000000000000091 /* RecentPresets.m in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000055 /* RecentPresets.m */; };
+		DEC1DE000000000000000092 /* CortinaEffects.m in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000057 /* CortinaEffects.m */; };
 		DEC1DE0000000000000000A0 /* BPMAnalyzer.mm in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000051 /* BPMAnalyzer.mm */; };
 		DEC1DE0000000000000000A1 /* analyse.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000065 /* analyse.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
 		DEC1DE0000000000000000A2 /* odf.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000066 /* odf.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
@@ -331,6 +334,12 @@
 		556ACE35187BB43A00AED4BC /* WrappedUtils.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = WrappedUtils.cpp; path = Source/WrappedUtils.cpp; sourceTree = "<group>"; };
 		DEC1DE000000000000000050 /* BPMAnalyzer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = BPMAnalyzer.h; path = Source/BPMAnalyzer.h; sourceTree = "<group>"; };
 		DEC1DE000000000000000051 /* BPMAnalyzer.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = BPMAnalyzer.mm; path = Source/BPMAnalyzer.mm; sourceTree = "<group>"; };
+		DEC1DE000000000000000052 /* DanceRhythm.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DanceRhythm.h; path = Source/DanceRhythm.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000053 /* DanceRhythm.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = DanceRhythm.m; path = Source/DanceRhythm.m; sourceTree = "<group>"; };
+		DEC1DE000000000000000054 /* RecentPresets.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RecentPresets.h; path = Source/RecentPresets.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000055 /* RecentPresets.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = RecentPresets.m; path = Source/RecentPresets.m; sourceTree = "<group>"; };
+		DEC1DE000000000000000056 /* CortinaEffects.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = CortinaEffects.h; path = Source/CortinaEffects.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000057 /* CortinaEffects.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = CortinaEffects.m; path = Source/CortinaEffects.m; sourceTree = "<group>"; };
 		DEC1DE000000000000000058 /* PROVENANCE.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; name = PROVENANCE.md; path = Vendor/PROVENANCE.md; sourceTree = "<group>"; };
 		DEC1DE000000000000000060 /* bpmcore.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = bpmcore.h; path = Vendor/bpmcore/bpmcore.h; sourceTree = "<group>"; };
 		DEC1DE000000000000000061 /* internal.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = internal.h; path = Vendor/bpmcore/internal.h; sourceTree = "<group>"; };
@@ -947,6 +956,10 @@
 		55BC0B1C1878D7FA00D84481 /* Model */ = {
 			isa = PBXGroup;
 			children = (
+				DEC1DE000000000000000052 /* DanceRhythm.h */,
+				DEC1DE000000000000000053 /* DanceRhythm.m */,
+				DEC1DE000000000000000054 /* RecentPresets.h */,
+				DEC1DE000000000000000055 /* RecentPresets.m */,
 				55BC0B0B1877F35000D84481 /* EffectType.h */,
 				55BC0B0C1877F35000D84481 /* EffectType.m */,
 				55BC0B041877F19400D84481 /* Effect.h */,
@@ -1064,6 +1077,8 @@
 		55F3B7CF18779B2200E8FEC8 /* Player */ = {
 			isa = PBXGroup;
 			children = (
+				DEC1DE000000000000000056 /* CortinaEffects.h */,
+				DEC1DE000000000000000057 /* CortinaEffects.m */,
 				55F3B7D018779B3000E8FEC8 /* Player.h */,
 				55F3B7D118779B3000E8FEC8 /* Player.m */,
 			);
@@ -1322,6 +1337,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DEC1DE000000000000000090 /* DanceRhythm.m in Sources */,
+				DEC1DE000000000000000091 /* RecentPresets.m in Sources */,
+				DEC1DE000000000000000092 /* CortinaEffects.m in Sources */,
 				550C63BB1FE26F12007841BC /* Telemetry.m in Sources */,
 				55717BF5187EA65400213213 /* SetlistButton.m in Sources */,
 				55B8587C1FB93ED20095D496 /* ScriptsManager.m in Sources */,
