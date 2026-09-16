@@ -10,3 +10,8 @@ LD_RUNPATH_SEARCH_PATHS = $(inherited) /Library/Frameworks
 ALWAYS_SEARCH_USER_PATHS = NO
 CODE_SIGN_ENTITLEMENTS = Resources/Embrace.entitlements
 
+// Version and build number.  Info.plist reaches for both as build settings
+// rather than carrying literals, so a release bump is two text edits here and
+// nowhere else -- not in the project file, and not in a binary plist.
+MARKETING_VERSION = 4.1.2
+CURRENT_PROJECT_VERSION = 10001
