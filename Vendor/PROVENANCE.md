@@ -4,6 +4,17 @@ Both directories are verbatim copies, and neither is developed here.  A change
 made in this tree is a change that will be lost the next time either is synced,
 so fix things upstream and copy the result back.
 
+`Build/SyncVendor.sh` is what does the copying, and what checks that paragraph
+is still true: it reads the revision below, compares every file against it, and
+names the ones that have drifted.
+
+    Build/SyncVendor.sh              does this still match what it says it is?
+    Build/SyncVendor.sh --log        what has upstream done since
+    Build/SyncVendor.sh --sync       take it, and move the revision below
+
+The pin lives in this file and nowhere else, which is why the script edits it
+rather than keeping a copy of its own.
+
 ## bpmcore
 
 The tempo and rhythm analysis behind `Source/BPMAnalyzer`, taken from
@@ -50,9 +61,15 @@ become playable.  It uses SSE on Intel and NEON on Apple silicon, both of which
 are always present on a Mac, so there is no configuration to make and no
 fallback path to keep working.
 
-Nothing in either directory is patched.  If that ever changes, say so here and
-keep the diff alongside -- a silent local change to a vendored file is how a
-build stops matching its provenance.
+Nothing in either directory is patched, and `Build/SyncVendor.sh` with no
+arguments is how to be sure of that rather than hopeful about it.  If it ever
+does change, say so here and keep the diff alongside -- a silent local change to
+a vendored file is how a build stops matching its provenance.
+
+A sync that brings over a file that was not here before needs one more step:
+the Worker target lists these sources one by one rather than referencing the
+folder, so a new `.cpp` will not be compiled until it is added to the project.
+The script says so when it happens.
 
 ## Warnings
 
