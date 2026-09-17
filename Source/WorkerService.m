@@ -76,7 +76,7 @@ static NSDictionary *sReadLoudness(NSURL *internalURL)
         // is by far the expensive part of this -- the analysis itself runs at
         // hundreds of times realtime -- so the one thing worth insisting on is
         // that the file is not decoded twice to answer two questions about it.
-        BPMAnalyzer *analyzer = BPMAnalyzerCreate(format.mChannelsPerFrame, format.mSampleRate);
+        BPMAnalyzer *analyzer = BPMAnalyzerCreate(format.mChannelsPerFrame, format.mSampleRate, framesRemaining);
 
         AudioBufferList *fillBufferList = HugAudioBufferListCreate(format.mChannelsPerFrame, 4096 * 16, YES);
 

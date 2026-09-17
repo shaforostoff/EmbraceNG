@@ -449,7 +449,7 @@ vendored `bpmcore` that the worker runs over every track it decodes.
 Tests/run-bpm-analyzer-tests.sh   # headless; writes two WAVs into $TMPDIR
 ```
 
-20 checks, all passing on macOS 14.8.8. `bpmcore` has its own suite upstream
+35 checks, all passing on macOS 14.8.8. `bpmcore` has its own suite upstream
 and is not re-tested here -- what is tested is everything between a file on
 disk and an answer, which is the part this project owns.
 
@@ -470,10 +470,31 @@ second of audio and no audio at all all reporting `Unknown` rather than a
 guess; and every entry point surviving a null analyzer, which is what the worker
 holds if `BPMAnalyzerCreate` ever fails.
 
-One check is a guard rather than a measurement. This analysis rides on a decode
-the app already performs while the DJ waits for a track to become playable, so
-it has to disappear into it: three minutes of stereo takes **0.22s**, about 820x
-realtime, against a cap of one second.
+**The length the worker passes** sizes the buffer and must do nothing else, so
+each rate is measured four times over: told the exact length, told nothing,
+told one frame, and told `SIZE_MAX`. All four have to agree to the last bit on
+both the tempo and how much audio was collected. Both rates are there because
+they buffer differently -- 44.1kHz is the model rate times a power of two and is
+kept as it is, while 48kHz is resampled down first, so the reserve is in samples
+at whichever rate that turned out to be.
+
+Two checks are guards rather than measurements, and both exist because this
+analysis rides on a decode the app already performs while the DJ waits for a
+track to become playable. It has to disappear into that. Three minutes of stereo
+takes **0.21s**, about 840x realtime, against a cap of one second. That figure
+is worth reading off an idle machine: a build running alongside it moves it to
+0.4s, which is still comfortably inside the cap but is measuring the machine
+rather than the analysis.
+
+The other reads `ru_maxrss` around a six minute side analysed twice, once told
+its length and once not: not being told costs **61MB** more. Six minutes is the
+shortest track that shows anything, because the fallback reserve is four
+minutes and the unused part of it is pages nothing ever touches. `ru_maxrss`
+only ever climbs, which is why the cheap case runs first -- the expensive one
+can then only show as a rise -- and why this section runs before the rest of the
+suite. The assertion is loose (20MB) and the printed absolutes include the
+harness's own copies of the test signal; the difference is the part that is the
+analyzer's.
 
 `testDirectFeed` also asserts that the rhythm name is one of the six
 `DanceRhythm.m` maps. That is one end of a contract with no compiler behind it

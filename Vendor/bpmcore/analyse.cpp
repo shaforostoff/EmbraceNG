@@ -98,7 +98,7 @@ analysis analyse(const float * mono, std::size_t count, unsigned sample_rate,
 	return run_analysis(mono, count, sample_rate, l, opt);
 }
 
-collector::collector(unsigned sample_rate)
+collector::collector(unsigned sample_rate, double expected_seconds)
 	: m_rate(sample_rate), m_analysis_rate(sample_rate), m_limit(0)
 {
 	if (sample_rate != 0 && !rate_matches_model(sample_rate))
@@ -111,11 +111,25 @@ collector::collector(unsigned sample_rate)
 		}
 	}
 
-	m_limit = static_cast<std::size_t>(
-		buffer_max_seconds * (m_analysis_rate ? m_analysis_rate : 1));
-	// Three minutes covers almost every tango side; the buffer grows past this
-	// only for the rare long track.
-	m_mono.reserve(std::min<std::size_t>(m_limit, static_cast<std::size_t>(m_analysis_rate) * 240));
+	const std::size_t rate = m_analysis_rate ? m_analysis_rate : 1;
+	m_limit = static_cast<std::size_t>(buffer_max_seconds * rate);
+
+	// Reserve for the side we were told about. A vector that outgrows its
+	// reserve doubles, and the copy has both buffers resident at once: a
+	// fifteen minute side at 44.1kHz went 42MB, 85MB, 169MB, with 254MB live
+	// at the last hop to hold audio that needs 159MB. The duration is
+	// something the host has before it starts decoding, so being told costs a
+	// metadb read and removes both the doubling and the overshoot.
+	//
+	// A second of headroom absorbs a duration that is rounded rather than
+	// exact, and the tail a resampler emits past it. Being wrong by more than
+	// that is a reallocation, which is what would have happened anyway.
+	//
+	// Four minutes covers almost every tango side, and is what an unheralded
+	// track gets.
+	double want_seconds = expected_seconds > 0 ? expected_seconds + 1.0 : 240.0;
+	if (!(want_seconds < buffer_max_seconds)) want_seconds = buffer_max_seconds;
+	m_mono.reserve(std::min(m_limit, static_cast<std::size_t>(want_seconds * rate)));
 }
 
 collector::~collector() {}

@@ -23,6 +23,8 @@
 #import "HugAudioFile.h"
 #import "HugUtils.h"
 
+#include <sys/resource.h>
+
 #include <cmath>
 #include <vector>
 
@@ -112,7 +114,7 @@ static void testDirectFeed(void)
     double rate = 44100;
     std::vector<float> mono = sMakeClickTrack(120.0, 90.0, rate, 0.8);
 
-    BPMAnalyzer *analyzer = BPMAnalyzerCreate(1, rate);
+    BPMAnalyzer *analyzer = BPMAnalyzerCreate(1, rate, mono.size());
     sFeed(analyzer, { mono }, 4096);
     BPMAnalyzerFinish(analyzer);
 
@@ -132,14 +134,14 @@ static void testDirectFeed(void)
 
     // Slicing is the worker's decode loop, and the answer must not depend on
     // where the reads happened to fall.
-    analyzer = BPMAnalyzerCreate(1, rate);
+    analyzer = BPMAnalyzerCreate(1, rate, mono.size());
     sFeed(analyzer, { mono }, 997);
     BPMAnalyzerFinish(analyzer);
     ckNear("same answer at an awkward slice size", BPMAnalyzerGetBeatsPerMinute(analyzer), bpm, 0.001);
     BPMAnalyzerFree(analyzer);
 
     // Both channels the same: the downmix must not change the answer.
-    analyzer = BPMAnalyzerCreate(2, rate);
+    analyzer = BPMAnalyzerCreate(2, rate, mono.size());
     sFeed(analyzer, { mono, mono }, 4096);
     BPMAnalyzerFinish(analyzer);
     ckNear("same answer duplicated to stereo", BPMAnalyzerGetBeatsPerMinute(analyzer), bpm, 0.001);
@@ -149,7 +151,7 @@ static void testDirectFeed(void)
     // of the first buffer, both show up here and nowhere else.
     std::vector<float> silence(mono.size(), 0.0f);
 
-    analyzer = BPMAnalyzerCreate(2, rate);
+    analyzer = BPMAnalyzerCreate(2, rate, mono.size());
     sFeed(analyzer, { mono, silence }, 4096);
     BPMAnalyzerFinish(analyzer);
     ckNear("half-silent stereo still finds the beat", BPMAnalyzerGetBeatsPerMinute(analyzer), bpm, 1.0);
@@ -165,7 +167,7 @@ static void testNothingToMeasure(void)
 
     std::vector<float> silence((size_t)(rate * 60), 0.0f);
 
-    BPMAnalyzer *analyzer = BPMAnalyzerCreate(1, rate);
+    BPMAnalyzer *analyzer = BPMAnalyzerCreate(1, rate, silence.size());
     sFeed(analyzer, { silence }, 4096);
     BPMAnalyzerFinish(analyzer);
     ckTrue("silence reports no tempo", BPMAnalyzerGetBeatsPerMinute(analyzer) == 0);
@@ -175,7 +177,7 @@ static void testNothingToMeasure(void)
     // Half a second, which is less than one analysis window.
     std::vector<float> tiny = sMakeClickTrack(120.0, 0.5, rate, 0.8);
 
-    analyzer = BPMAnalyzerCreate(1, rate);
+    analyzer = BPMAnalyzerCreate(1, rate, tiny.size());
     sFeed(analyzer, { tiny }, 4096);
     BPMAnalyzerFinish(analyzer);
     ckEqual("half a second reports Unknown", BPMAnalyzerGetRhythm(analyzer), BPMAnalyzerRhythmUnknown);
@@ -183,14 +185,14 @@ static void testNothingToMeasure(void)
 
     // Nothing at all.  The worker reaches this for a file it could open and
     // then read no frames from.
-    analyzer = BPMAnalyzerCreate(2, rate);
+    analyzer = BPMAnalyzerCreate(2, rate, 0);
     BPMAnalyzerFinish(analyzer);
     ckEqual("no audio at all reports Unknown", BPMAnalyzerGetRhythm(analyzer), BPMAnalyzerRhythmUnknown);
     ckTrue("no audio at all reports no tempo", BPMAnalyzerGetBeatsPerMinute(analyzer) == 0);
     BPMAnalyzerFree(analyzer);
 
     // Every entry point has to survive a create that failed.
-    ckTrue("a null analyzer is inert", BPMAnalyzerCreate(0, rate) == NULL);
+    ckTrue("a null analyzer is inert", BPMAnalyzerCreate(0, rate, 0) == NULL);
     BPMAnalyzerScanAudioBuffer(NULL, NULL, 0);
     BPMAnalyzerFinish(NULL);
     ckTrue("null reports no tempo", BPMAnalyzerGetBeatsPerMinute(NULL) == 0);
@@ -259,7 +261,7 @@ static BPMAnalyzer *sAnalyzeFileAtURL(NSURL *url)
     AudioStreamBasicDescription format = [audioFile format];
     NSInteger framesRemaining = fileLengthFrames;
 
-    BPMAnalyzer *analyzer = BPMAnalyzerCreate(format.mChannelsPerFrame, format.mSampleRate);
+    BPMAnalyzer *analyzer = BPMAnalyzerCreate(format.mChannelsPerFrame, format.mSampleRate, framesRemaining);
 
     AudioBufferList *fillBufferList = HugAudioBufferListCreate(format.mChannelsPerFrame, 4096 * 16, YES);
 
@@ -330,6 +332,126 @@ static void testThroughAFile(void)
 }
 
 
+static void testLengthHint(void)
+{
+    printf("\n-- told how long the track is --\n");
+
+    // -Create takes the length so that the buffer can be reserved once instead
+    // of grown into.  It must size the buffer and nothing else, so what is
+    // checked here is that every wrong answer -- and the honest "I do not
+    // know" -- measures exactly what the right one does.
+    //
+    // Both paths, because they buffer at different rates: 44.1kHz is 22.05kHz
+    // times a power of two and is kept as it is, while 48kHz is resampled down,
+    // and the reserve is in samples at whichever rate that turned out to be.
+    double rates[2] = { 44100, 48000 };
+
+    for (int i = 0; i < 2; i++) {
+        double rate = rates[i];
+        std::vector<float> mono = sMakeClickTrack(120.0, 90.0, rate, 0.8);
+
+        // Frames the worker would actually pass, out of the file header.
+        size_t exact = mono.size();
+
+        size_t hints[4] = {
+            exact,      // what the worker passes
+            0,          // a file whose length is not known
+            1,          // far too small -- one frame for a 90 second track
+            SIZE_MAX    // absurd, and a clamp away from a 70TB reserve
+        };
+
+        const char *names[4] = { "the exact length", "no length at all",
+                                 "a length far too small", "an absurd length" };
+
+        double want = 0, wantDuration = 0;
+
+        for (int h = 0; h < 4; h++) {
+            BPMAnalyzer *analyzer = BPMAnalyzerCreate(1, rate, hints[h]);
+            sFeed(analyzer, { mono }, 4096);
+            BPMAnalyzerFinish(analyzer);
+
+            double bpm = BPMAnalyzerGetBeatsPerMinute(analyzer);
+            double duration = BPMAnalyzerGetDuration(analyzer);
+
+            char what[128];
+
+            if (h == 0) {
+                want = bpm;
+                wantDuration = duration;
+
+                snprintf(what, sizeof(what), "%gkHz: %s measures it", rate / 1000, names[h]);
+                ckNear(what, bpm, 120.0, 1.0);
+            } else {
+                snprintf(what, sizeof(what), "%gkHz: %s, same tempo", rate / 1000, names[h]);
+                ckNear(what, bpm, want, 0.0);
+
+                snprintf(what, sizeof(what), "%gkHz: %s, same audio collected", rate / 1000, names[h]);
+                ckNear(what, duration, wantDuration, 0.0);
+            }
+
+            BPMAnalyzerFree(analyzer);
+        }
+    }
+}
+
+
+static long sPeakResidentBytes(void)
+{
+    struct rusage usage;
+    if (getrusage(RUSAGE_SELF, &usage) != 0) return 0;
+    return (long)usage.ru_maxrss;   // bytes on Darwin, unlike Linux
+}
+
+
+static void testBufferSizingCost(void)
+{
+    printf("\n-- what being told costs, and what not being told costs --\n");
+
+    // The reason the argument exists.  A vector that outgrows its reserve
+    // doubles, and the copy holds the old buffer and the new one at once; the
+    // default reserve is four minutes, so a side longer than that pays for the
+    // copy and then sits in a buffer half again too big.
+    //
+    // ru_maxrss only ever goes up, which decides the order: measure the cheap
+    // case first, and the expensive one can then only show as a rise.  Six
+    // minutes is the shortest track that shows anything at all -- under four,
+    // the unused part of the reserve is pages nothing ever touched, and costs
+    // no resident memory to leave alone.
+    double rate = 44100;
+    std::vector<float> mono = sMakeClickTrack(120.0, 360.0, rate, 0.8);
+
+    long before = sPeakResidentBytes();
+
+    BPMAnalyzer *analyzer = BPMAnalyzerCreate(1, rate, mono.size());
+    sFeed(analyzer, { mono }, 4096 * 16);
+    BPMAnalyzerFinish(analyzer);
+    BPMAnalyzerFree(analyzer);
+
+    long told = sPeakResidentBytes();
+
+    analyzer = BPMAnalyzerCreate(1, rate, 0);
+    sFeed(analyzer, { mono }, 4096 * 16);
+    BPMAnalyzerFinish(analyzer);
+    BPMAnalyzerFree(analyzer);
+
+    long untold = sPeakResidentBytes();
+
+    // The absolutes are this harness and not the app: it holds the test signal
+    // and the copy -Feed makes of it long after the analyzer is done with them.
+    // The difference is the analyzer's, and it is the figure that means
+    // something.
+    printf("   ---- six minute side: not being told costs %.0fMB more"
+           " (harness peak %.0fMB told, %.0fMB not, %.0fMB before either)\n",
+           (untold - told) / 1048576.0,
+           told / 1048576.0, untold / 1048576.0, before / 1048576.0);
+
+    // Loose on purpose.  The exact figure is the allocator's business and the
+    // machine's; what this pins is the direction, which is the whole claim --
+    // and it only reads as a rise because the cheap case ran first.
+    ckTrue("not being told costs more than being told", untold > told + (20 << 20));
+}
+
+
 static void testCost(void)
 {
     printf("\n-- what it costs --\n");
@@ -339,7 +461,7 @@ static void testCost(void)
 
     NSDate *started = [NSDate date];
 
-    BPMAnalyzer *analyzer = BPMAnalyzerCreate(2, rate);
+    BPMAnalyzer *analyzer = BPMAnalyzerCreate(2, rate, mono.size());
     sFeed(analyzer, { mono, mono }, 4096 * 16);
     BPMAnalyzerFinish(analyzer);
     BPMAnalyzerFree(analyzer);
@@ -361,8 +483,12 @@ int main(void)
     @autoreleasepool {
         printf("BPMAnalyzer\n");
 
+        // First, because it reads a peak that only ever climbs.
+        testBufferSizingCost();
+
         testDirectFeed();
         testNothingToMeasure();
+        testLengthHint();
         testThroughAFile();
         testCost();
 

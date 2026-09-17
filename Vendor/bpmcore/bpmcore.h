@@ -120,17 +120,23 @@ analysis analyse(const float * mono, std::size_t count, unsigned sample_rate,
 //!
 //! The envelope has to be normalised by the track's overall level before it is
 //! compressed, and that is not knowable until the whole side has been seen, so
-//! the audio is buffered rather than streamed. Mono floats cost about 10MB for
-//! a three minute track, which is cheaper than decoding twice.
+//! the audio is buffered rather than streamed. That is one mono float per
+//! sample at the analysis rate - 30MB for a three minute side at 44.1kHz -
+//! which is still cheaper than decoding the side twice.
 //!
 //! Audio is downmixed and, where the input rate calls for it, resampled to the
 //! analysis rate on the way in, so what is held is bounded by the track's
-//! duration rather than by its sample rate - a 192kHz file costs no more to
-//! collect than a 44.1kHz one.
+//! duration rather than by its sample rate: a 192kHz file costs no more to
+//! collect than a 48kHz one. A rate that needs no resampling keeps its own,
+//! though, so 44.1kHz costs twice what 48kHz does.
 class collector
 {
 public:
-	explicit collector(unsigned sample_rate);
+	//! `expected_seconds` is how long the track is, where the host knows
+	//! before it starts decoding, and 0 where it does not. It sizes the buffer
+	//! and nothing else: told nothing, or told wrong, the collector holds the
+	//! same audio and still stops at `max_seconds`.
+	explicit collector(unsigned sample_rate, double expected_seconds = 0);
 	~collector();
 
 	//! The rate audio is being handed in at, which is not necessarily the rate

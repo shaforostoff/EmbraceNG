@@ -45,6 +45,14 @@ tap 88.7% of the time, and classifies the rhythm correctly 93.6% of the time.
 Three minutes of stereo costs about 0.2 seconds, against a decode that takes far
 longer.
 
+What it does cost is memory, because the audio has to be buffered rather than
+streamed: the onset envelope is normalised by the track's overall level, which
+is not known until the last frame has been seen. That is one mono float per
+sample for the length of the track -- about 30MB for a three minute side -- and
+the worker tells the analyzer how long the track is so the buffer is allocated
+once at the right size rather than grown into. Two tracks are scanned at a time
+at most.
+
 It runs on pffft rather than the portable scalar transform foo_rubato ships --
 about six times faster at these sizes, using SSE on Intel and NEON on Apple
 silicon.

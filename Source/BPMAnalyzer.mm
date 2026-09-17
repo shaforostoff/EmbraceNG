@@ -20,13 +20,19 @@ struct BPMAnalyzer {
 };
 
 
-BPMAnalyzer *BPMAnalyzerCreate(unsigned int channels, double sampleRate)
+BPMAnalyzer *BPMAnalyzerCreate(unsigned int channels, double sampleRate, size_t totalFrames)
 {
     if (!channels || !(sampleRate > 0)) return NULL;
 
     BPMAnalyzer *analyzer = new BPMAnalyzer();
 
-    analyzer->collector.reset(new bpmcore::collector((unsigned)sampleRate));
+    // bpmcore reserves in seconds, and what the worker has is a frame count
+    // out of the file header -- exact, not the estimate a tag would give.  A
+    // track of unknown length passes 0 and gets bpmcore's own four minute
+    // reserve, which is the same buffer this used to ask for unconditionally.
+    double seconds = totalFrames / sampleRate;
+
+    analyzer->collector.reset(new bpmcore::collector((unsigned)sampleRate, seconds));
     analyzer->channels = channels;
     analyzer->finished = false;
 
