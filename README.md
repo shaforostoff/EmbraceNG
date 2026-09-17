@@ -35,6 +35,14 @@ of it, so a BPM added or corrected in the file later wins with no re-analysis,
 and a track's state file says plainly which number came from where. The column
 shows the tag where there is one and the measurement where there is not.
 
+The two are told apart on sight. A measured number is drawn in blue and a
+tagged one in the same grey as the rest of the line, so a glance down the set
+list says which tempos the app worked out and which the DJ stands behind --
+worth knowing when a tanda is being built out of a number. The blue is dark in
+the light appearance and light in the dark one, and it gives way on the
+selected row and the playing one, where the whole line is already drawn in a
+color of its own and a second one would only fight it.
+
 Nothing is measured until the tags have been read, which is the point at which
 it is knowable whether measuring would add anything. Two answers come out of
 the one decode, and a tag can close either: a BPM tag fills the column, and a

@@ -117,8 +117,11 @@ typedef NS_ENUM(NSInteger, TrackLabel) {
 @property (nonatomic, readonly) NSString *detectedRhythm;
 
 // The BPM tag where the file carried one, and the measurement rounded to the
-// nearest whole BPM where it did not.
+// nearest whole BPM where it did not.  -beatsPerMinuteWasMeasured says which of
+// the two -effectiveBeatsPerMinute is showing, so that the setlist can mark a
+// number this app worked out and leave a number the DJ typed alone.
 @property (nonatomic, readonly) NSInteger effectiveBeatsPerMinute;
+@property (nonatomic, readonly) BOOL      beatsPerMinuteWasMeasured;
 
 // What the floor will dance to: the genre tag where there is one, and the
 // analysis where there is not.  DanceRhythmUnknown only when neither had

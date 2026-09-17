@@ -98,7 +98,7 @@ static NSString * const sPlayedTimeKey        = @"playedTime";
 }
 
 @dynamic playDuration, silenceAtStart, silenceAtEnd, tonality;
-@dynamic effectiveBeatsPerMinute, danceRhythm;
+@dynamic effectiveBeatsPerMinute, beatsPerMinuteWasMeasured, danceRhythm;
 
 
 static NSURL *sGetStateDirectoryURL()
@@ -1103,6 +1103,16 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
     if (_beatsPerMinute) return _beatsPerMinute;
 
     return (NSInteger)llround(_detectedBeatsPerMinute);
+}
+
+
+- (BOOL) beatsPerMinuteWasMeasured
+{
+    // Only where there is a number to attribute.  A measurement that rounds to
+    // nothing shows nothing, and nothing is not worth marking.
+    if (_beatsPerMinute) return NO;
+
+    return llround(_detectedBeatsPerMinute) != 0;
 }
 
 
