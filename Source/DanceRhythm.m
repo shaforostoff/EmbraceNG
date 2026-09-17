@@ -106,3 +106,24 @@ NSString *GetNameForDanceRhythm(DanceRhythm rhythm)
 
     return @"Unknown";
 }
+
+
+BOOL GetWantsTempoMeasurement(
+    BOOL       displaysBPM,
+    NSString  *detectedRhythm,
+    NSInteger  taggedBPM,
+    NSString  *taggedGenre
+) {
+    if (!displaysBPM) return NO;
+
+    if ([detectedRhythm isKindOfClass:[NSString class]] && [detectedRhythm length]) {
+        return NO;
+    }
+
+    BOOL tagAnsweredBPM = (taggedBPM != 0);
+
+    BOOL tagAnsweredRhythm = [taggedGenre isKindOfClass:[NSString class]] &&
+                             [taggedGenre length] > 0;
+
+    return !(tagAnsweredBPM && tagAnsweredRhythm);
+}

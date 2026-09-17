@@ -188,6 +188,67 @@ static void testTheRule(void)
 }
 
 
+#pragma mark - Whether to measure at all
+
+static void testWhetherToMeasure(void)
+{
+    printf("\n-- whether the audio is worth asking --\n");
+
+    // The switch behind the BPM column is the feature's on and off.  Off is
+    // off whatever else is true of the track: nothing new is measured.
+    ckTrue("off, and nothing is measured",
+           !GetWantsTempoMeasurement(NO, nil, 0, nil));
+    ckTrue("off, even with everything else open",
+           !GetWantsTempoMeasurement(NO, nil, 0, @""));
+
+    // On, and the track knows nothing about itself: measure.
+    ckTrue("on, and nothing is known",
+           GetWantsTempoMeasurement(YES, nil, 0, nil));
+
+    // Already measured, so there is nothing to learn.  This is the one that
+    // keeps a set list from being re-decoded on every preference change.
+    ckTrue("measured already",
+           !GetWantsTempoMeasurement(YES, @"Tango", 0, nil));
+
+    // "Unknown" is a measurement.  The worker writes it when it could not find
+    // a tempo, and it has to count as answered, or a track that cannot be
+    // measured is decoded again on every launch forever.
+    ckTrue("measured, and the answer was Unknown",
+           !GetWantsTempoMeasurement(YES, @"Unknown", 0, nil));
+    ckTrue("an empty rhythm is not a measurement",
+           GetWantsTempoMeasurement(YES, @"", 0, nil));
+    ckTrue("something that is not a string is not a measurement",
+           GetWantsTempoMeasurement(YES, (id)@42, 0, nil));
+
+    // One tag is not enough, because two questions ride on the one decode.
+    ckTrue("a BPM tag alone still leaves the rhythm open",
+           GetWantsTempoMeasurement(YES, nil, 120, nil));
+    ckTrue("a genre tag alone still leaves the BPM open",
+           GetWantsTempoMeasurement(YES, nil, 0, @"Tango"));
+
+    // Both answered: the decode would tell us nothing we would read.  This is
+    // the case the whole sequencing change exists to reach -- it is only
+    // knowable once the tags are in.
+    ckTrue("both tags answered, so nothing to measure",
+           !GetWantsTempoMeasurement(YES, nil, 120, @"Tango"));
+
+    // Any genre closes the rhythm half, not just a danced one.  "Rock" is a DJ
+    // saying this is a cortina, which is exactly the answer CortinaEffects
+    // wanted -- the same rule GetDanceRhythm applies, read from this end.
+    ckTrue("a genre naming no dance is still an answer",
+           !GetWantsTempoMeasurement(YES, nil, 120, @"Rock"));
+
+    // The edges of "is there a tag".  An empty string is not one, and a zero
+    // BPM is not one either -- Track stores an absent BPM as 0.
+    ckTrue("an empty genre is not a tag",
+           GetWantsTempoMeasurement(YES, nil, 120, @""));
+    ckTrue("a zero BPM is not a tag",
+           GetWantsTempoMeasurement(YES, nil, 0, @"Tango"));
+    ckTrue("a genre that is not a string is not a tag",
+           GetWantsTempoMeasurement(YES, nil, 120, (id)@42));
+}
+
+
 #pragma mark - Finding the cortina preset
 
 static EffectType *sTypeNamed(NSString *name)
@@ -435,6 +496,7 @@ int main(void)
         testGenreTags();
         testDetectedNames();
         testTheRule();
+        testWhetherToMeasure();
 
         EffectType *lowpassType  = sTypeNamed(@"AULowpass");
         EffectType *dynamicsType = sTypeNamed(@"AUDynamicsProcessor");

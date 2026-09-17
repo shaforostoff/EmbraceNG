@@ -18,7 +18,12 @@ static dispatch_queue_t sLoudnessImmediateQueue  = nil;
 static dispatch_queue_t sLoudnessBackgroundQueue = nil;
 
 static NSMutableSet *sCancelledUUIDs = nil;
-static NSMutableSet *sLoudnessUUIDs  = nil;
+
+// UUID -> whether the scan that ran for it measured the tempo.  A plain set of
+// "already scanned" was enough while every scan did the same work; it is not
+// now, because a track scanned with the BPM column switched off has to be
+// allowed a second scan when it is switched back on.
+static NSMutableDictionary *sScannedUUIDs = nil;
 
 
 @interface Worker : NSObject <WorkerProtocol>
@@ -41,7 +46,7 @@ static NSMutableSet *sLoudnessUUIDs  = nil;
         sLoudnessBackgroundQueue = dispatch_queue_create("loudness-background", DISPATCH_QUEUE_SERIAL);
 
         sCancelledUUIDs = [NSMutableSet set];
-        sLoudnessUUIDs  = [NSMutableSet set];
+        sScannedUUIDs   = [NSMutableDictionary dictionary];
     });
 }
 
@@ -56,7 +61,7 @@ static NSDictionary *sReadMetadata(NSURL *internalURL, NSString *originalFilenam
 }
 
 
-static NSDictionary *sReadLoudness(NSURL *internalURL)
+static NSDictionary *sReadLoudness(NSURL *internalURL, BOOL measuresTempo)
 {
     NSMutableDictionary *result = [NSMutableDictionary dictionary];
 
@@ -76,7 +81,12 @@ static NSDictionary *sReadLoudness(NSURL *internalURL)
         // is by far the expensive part of this -- the analysis itself runs at
         // hundreds of times realtime -- so the one thing worth insisting on is
         // that the file is not decoded twice to answer two questions about it.
-        BPMAnalyzer *analyzer = BPMAnalyzerCreate(format.mChannelsPerFrame, format.mSampleRate, framesRemaining);
+        // NULL when nothing will read the answer.  Every BPMAnalyzer entry
+        // point is inert on a null analyzer -- the suite pins that, because it
+        // is also what the worker holds if a create ever fails -- so the loop
+        // below needs no second condition in it.
+        BPMAnalyzer *analyzer = measuresTempo ?
+            BPMAnalyzerCreate(format.mChannelsPerFrame, format.mSampleRate, framesRemaining) : NULL;
 
         AudioBufferList *fillBufferList = HugAudioBufferListCreate(format.mChannelsPerFrame, 4096 * 16, YES);
 
@@ -116,8 +126,16 @@ static NSDictionary *sReadLoudness(NSURL *internalURL)
         // when nothing could be measured, because an absent rhythm is what the
         // app reads as "never analysed" and re-requests; a track that cannot be
         // measured would otherwise be decoded again on every launch.
-        [result setObject:@(BPMAnalyzerGetBeatsPerMinute(analyzer)) forKey:TrackKeyDetectedBPM];
-        [result setObject:BPMAnalyzerGetRhythm(analyzer)            forKey:TrackKeyDetectedRhythm];
+        //
+        // Which is exactly why a scan that was asked not to measure writes
+        // neither key.  Reporting Unknown there would be a lie of the most
+        // durable kind: the app cannot tell it from a measurement that failed,
+        // so the track would be marked answered and never looked at again --
+        // and turning the BPM column back on would not bring it back.
+        if (measuresTempo) {
+            [result setObject:@(BPMAnalyzerGetBeatsPerMinute(analyzer)) forKey:TrackKeyDetectedBPM];
+            [result setObject:BPMAnalyzerGetRhythm(analyzer)            forKey:TrackKeyDetectedRhythm];
+        }
 
         HugAudioBufferListFree(fillBufferList, YES);
         LoudnessMeasurerFree(measurer);
@@ -144,6 +162,7 @@ static NSDictionary *sReadLoudness(NSURL *internalURL)
                         UUID: (NSUUID *) UUID
                 bookmarkData: (NSData *) bookmarkData
             originalFilename: (NSString *) originalFilename
+               measuresTempo: (BOOL) measuresTempo
                        reply: (void (^)(NSDictionary *))reply
 {
     NSError *error = nil;
@@ -167,15 +186,23 @@ static NSDictionary *sReadLoudness(NSURL *internalURL)
         dispatch_queue_t queue       = isImmediate ? sLoudnessImmediateQueue : sLoudnessBackgroundQueue;
 
         dispatch_async(queue, ^{ @autoreleasepool {
-            if (![sCancelledUUIDs containsObject:UUID] && ![sLoudnessUUIDs containsObject:UUID]) {
-                [sLoudnessUUIDs addObject:UUID];
+            if ([sCancelledUUIDs containsObject:UUID]) return;
 
-                NSDictionary *dictionary = sReadLoudness(internalURL);
+            NSNumber *previous = [sScannedUUIDs objectForKey:UUID];
 
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    reply(dictionary);
-                });
-            }
+            // Scanned before, and that scan already did everything this one is
+            // asking for.  Decoding the file again would produce the same
+            // answer, so it does not happen -- and, as before, no reply is
+            // sent, because there is nothing in it the track does not have.
+            if (previous && (!measuresTempo || [previous boolValue])) return;
+
+            [sScannedUUIDs setObject:@(measuresTempo || [previous boolValue]) forKey:UUID];
+
+            NSDictionary *dictionary = sReadLoudness(internalURL, measuresTempo);
+
+            dispatch_async(dispatch_get_main_queue(), ^{
+                reply(dictionary);
+            });
         } });
     }
 }

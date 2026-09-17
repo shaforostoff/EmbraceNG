@@ -449,7 +449,7 @@ vendored `bpmcore` that the worker runs over every track it decodes.
 Tests/run-bpm-analyzer-tests.sh   # headless; writes two WAVs into $TMPDIR
 ```
 
-35 checks, all passing on macOS 14.8.8. `bpmcore` has its own suite upstream
+50 checks, all passing on macOS 14.8.8. `bpmcore` has its own suite upstream
 and is not re-tested here -- what is tested is everything between a file on
 disk and an answer, which is the part this project owns.
 
@@ -496,6 +496,28 @@ suite. The assertion is loose (20MB) and the printed absolutes include the
 harness's own copies of the test signal; the difference is the part that is the
 analyzer's.
 
+**The worker's gate** is the last section, and it drives the real `Worker` class
+rather than a transcription of it -- the protocol is what crosses the process
+boundary, not the class, so the suite instantiates it in its own process and
+calls it directly. (`WorkerService.m` carries the XPC service's `main()`, which
+the runner renames at the preprocessor; `main` appears in that file exactly once
+and the suite reaches past the listener anyway.)
+
+What it pins is that a scan told to measure comes back with a tempo and a rhythm
+beside the overview, and a scan told not to comes back with the overview and the
+loudness and *neither* tempo key -- not `Unknown`. That distinction is the whole
+of it: the app cannot tell an `Unknown` that was never looked for from one that
+was, so writing it would mark the track answered for good, and turning the BPM
+column back on would never bring it back.
+
+The rest of that section is the repeat rule, which is what makes the column a
+switch rather than a one-way door. Asking for no more than was already done is
+refused silently, as it always was. Asking for the tempo after a scan that
+skipped it runs the decode again -- without that, a track scanned while the
+column was off could never be measured for the rest of the session. Having
+measured, both phrasings of the question are refused. A cancelled track is not
+scanned whatever it is asked for.
+
 `testDirectFeed` also asserts that the rhythm name is one of the six
 `DanceRhythm.m` maps. That is one end of a contract with no compiler behind it
 -- the names cross a process boundary and a state file as strings -- and
@@ -513,7 +535,7 @@ answers.
 Tests/run-cortina-tests.sh   # headless; instantiates audio units, renders nothing
 ```
 
-84 checks, all passing on macOS 14.8.8.
+98 checks, all passing on macOS 14.8.8.
 
 **Reading a genre tag** is a table of what collections really hold, and the
 compound tags are why it is a table. "Tango Vals" is a vals and "Tango Milonga"
@@ -530,6 +552,21 @@ settings off exactly the track they were meant for.
 it are ours: the five names are `bpmcore`'s `rhythm_name()` and the sixth is
 `BPMAnalyzerRhythmUnknown`. A name outside the set means `bpmcore` changed
 underneath us, and reads as `Unknown` rather than being guessed at.
+
+**Whether to measure at all** is the same subject read from the other end, and
+`GetWantsTempoMeasurement` is tested here because this is where the rest of that
+subject lives. The BPM column is the feature's switch, so off means no, whatever
+else is true. Past that, a measurement is worth a decode only while one of the
+two answers it produces is still open: one tag is not enough, because a BPM tag
+closes the column's half and a genre tag closes the rhythm's, and the decode
+produces both. A genre naming no dance closes it just the same -- the `Rock`
+case again, from the other side.
+
+The edges are all "is this really an answer": an empty genre is not a tag, a
+zero BPM is not a tag, and a rhythm of `Unknown` *is* a measurement. That last
+one is what stops a track that cannot be measured from being decoded again on
+every launch, and it is the reason the worker omits the key rather than writing
+`Unknown` when it was never asked to look.
 
 **The rule** -- tag first, measurement second -- has one case that is easy to
 get wrong, and it has a check of its own. A tag reading "Rock" names none of the

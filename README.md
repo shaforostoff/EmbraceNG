@@ -35,6 +35,21 @@ of it, so a BPM added or corrected in the file later wins with no re-analysis,
 and a track's state file says plainly which number came from where. The column
 shows the tag where there is one and the measurement where there is not.
 
+Nothing is measured until the tags have been read, which is the point at which
+it is knowable whether measuring would add anything. Two answers come out of
+the one decode, and a tag can close either: a BPM tag fills the column, and a
+genre tag settles what the cortina switching below reads -- *any* genre tag,
+since one naming no dance is a DJ saying this track is not part of a tanda. A
+file carrying both is scanned for its waveform and not measured. The wait is a
+tag parse against a decode that takes seconds, and only for the first track:
+after that the metadata queue is far ahead of the scanning one.
+
+**The BPM column is the feature's on and off.** With it off -- View > Track
+Attributes > Beats Per Minute -- nothing is measured, because nothing would
+read the answer. Switching it off mid-set does not throw away what has already been
+measured; that is paid for, and the effects go on using it. It stops further
+tracks being analysed, and switching the column back on starts them again.
+
 The analysis is `bpmcore`, from
 [foo_rubato](https://github.com/shaforostoff/foo_rubato) and vendored verbatim
 under `Vendor/` -- see `Vendor/PROVENANCE.md`. It reports the tempo at the level
@@ -57,7 +72,7 @@ It runs on pffft rather than the portable scalar transform foo_rubato ships --
 about six times faster at these sizes, using SSE on Intel and NEON on Apple
 silicon.
 
-Measurements are **not** kept between runs. Every track is analysed once per
+Measurements are **not** kept between runs, given the column is on. Every track is analysed once per
 launch rather than once ever, because a measurement is a guess about the file
 and the state file is not the file: keeping one keeps a bad reading too, and
 there is nowhere in the interface to clear it. Re-measuring each launch means a

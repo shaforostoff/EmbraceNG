@@ -7,6 +7,9 @@
 // Only one distinction is actually acted on -- danced, or a cortina -- but the
 // specific rhythm is carried through anyway, because it is what the logs need
 // to be readable when a track is switched the wrong way round.
+//
+// The last function here is the other half of the same subject: whether the
+// audio is worth asking at all, given what the tags have already said.
 
 #import <Foundation/Foundation.h>
 
@@ -66,6 +69,34 @@ extern BOOL GetDanceRhythmIsDanced(DanceRhythm rhythm);
 
 // For logs.  Never nil.
 extern NSString *GetNameForDanceRhythm(DanceRhythm rhythm);
+
+// Whether measuring this track would tell the app anything it would then read.
+//
+// The measurement is not free -- it rides a decode, and the decode is the cost
+// -- so it is worth doing only while one of the two answers it produces is
+// still open.  The tags may have closed either, both or neither:
+//
+//   `taggedBPM`    fills the BPM column, so a non-zero one closes that half.
+//   `taggedGenre`  settles the rhythm, and *any* non-empty genre does, because
+//                  one naming no dance is a DJ saying this is a cortina.  That
+//                  is GetDanceRhythm's rule above, read from the other end.
+//
+// `displaysBPM` is the feature's on and off, and comes from the preference
+// behind the BPM column.  Off, nothing new is measured; what was measured
+// before it went off is already paid for and is not thrown away, which is why
+// this answers a question about starting work rather than about keeping it.
+//
+// `detectedRhythm` is what a previous scan reported, and any non-nil value
+// closes both halves.  The worker reports a rhythm whatever it found -- the
+// string "Unknown" where it found nothing -- so this is "has been measured",
+// not "was measured successfully", and a track that cannot be measured is not
+// decoded again on every launch.
+extern BOOL GetWantsTempoMeasurement(
+    BOOL       displaysBPM,
+    NSString  *detectedRhythm,
+    NSInteger  taggedBPM,
+    NSString  *taggedGenre
+);
 
 #ifdef __cplusplus
 }

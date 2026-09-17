@@ -8,6 +8,7 @@
 #import "ScriptsManager.h"
 #import "WorkerService.h"
 #import "HugError.h"
+#import "Preferences.h"
 
 #import <AVFoundation/AVFoundation.h>
 
@@ -85,6 +86,15 @@ static NSString * const sPlayedTimeKey        = @"playedTime";
     BOOL            _dirty;
     BOOL            _cleared;
     BOOL            _priorityAnalysisRequested;
+
+    // What has already been asked of the worker for this track, so that the
+    // same scan is not requested twice.  The worker keeps the same pair of
+    // facts and would refuse a repeat anyway; this is here so the common case
+    // -- a preference change arriving at a set list where every track is
+    // already measured -- costs nothing at all rather than one XPC round trip
+    // per track.
+    BOOL            _analysisRequested;
+    BOOL            _analysisMeasuresTempo;
 }
 
 @dynamic playDuration, silenceAtStart, silenceAtEnd, tonality;
@@ -246,6 +256,7 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
         EmbraceLog(@"Track", @"%@ is at memory address %p", self, self);
         
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_handleApplicationWillTerminate:) name:NSApplicationWillTerminateNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_handlePreferencesDidChange:) name:PreferencesDidChangeNotification object:nil];
     }
 
     return self;
@@ -511,16 +522,17 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
     [self _readMetadataViaManagerWithFileURL:externalURL];
     [self _requestWorkerCommand:WorkerTrackCommandReadMetadata];
 
-    // A track carrying an overview but no rhythm was analysed by a build that
-    // did not measure one.  Asking again costs a background decode once, and
-    // the worker writes a rhythm whatever it finds, so this cannot repeat.
-    if (!_overviewData || !_detectedRhythm) {
-        if (_priorityAnalysisRequested) {
-            [self _requestWorkerCommand:WorkerTrackCommandReadLoudnessImmediate];
-        } else {
-            [self _requestWorkerCommand:WorkerTrackCommandReadLoudness];
-        }
-    }
+    // The scan is not asked for here.  It used to be, on the line after this
+    // one, which meant deciding whether to measure the tempo before reading
+    // the tags that answer that question -- so a track whose file already
+    // carried a BPM was decoded to measure one anyway.
+    //
+    // -_requestAnalysisIfNeeded is called from the metadata reply instead.
+    // Waiting costs a tag parse against a decode that takes seconds, and only
+    // for the first track: by the time the loudness queue has finished one,
+    // the metadata queue is far ahead of it.  Should that reply never arrive,
+    // the track stays unscanned until it is played, at which point the player
+    // calls -startPriorityAnalysis, which does not wait for anything.
      
     if (_dirty) {
         [self _saveStateImmediately:YES];
@@ -728,13 +740,20 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
 
 - (void) _requestWorkerCommand:(WorkerTrackCommand)command
 {
+    [self _requestWorkerCommand:command measuresTempo:NO];
+}
+
+
+- (void) _requestWorkerCommand:(WorkerTrackCommand)command measuresTempo:(BOOL)measuresTempo
+{
     __weak id weakSelf = self;
 
     NSUUID *UUID        = [self UUID];
     NSURL  *internalURL = [self internalURL];
     NSURL  *externalURL = [self externalURL];
 
-    EmbraceLog(@"Track", @"%@ requesting worker command %ld", self, (long)command);
+    EmbraceLog(@"Track", @"%@ requesting worker command %ld%@", self, (long)command,
+        measuresTempo ? @" (measuring tempo)" : @"");
 
     id<WorkerProtocol> worker = [GetAppDelegate() workerProxyWithErrorHandler:^(NSError *error) {
         EmbraceLog(@"Track", @"Received error for worker command %ld: %@", command, error);
@@ -746,7 +765,7 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
 
     NSString *originalFilename = [externalURL lastPathComponent];
     
-    [worker performTrackCommand:command UUID:UUID bookmarkData:bookmarkData originalFilename:originalFilename reply: ^(NSDictionary *dictionary) {
+    [worker performTrackCommand:command UUID:UUID bookmarkData:bookmarkData originalFilename:originalFilename measuresTempo:measuresTempo reply: ^(NSDictionary *dictionary) {
         dispatch_async(dispatch_get_main_queue(), ^{
             id strongSelf = weakSelf;
         
@@ -761,6 +780,10 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
             [strongSelf _updateState:dictionary initialLoad:NO];
             
             if (command == WorkerTrackCommandReadMetadata) {
+                // The tags are in, so what a scan could still add is now a
+                // question with an answer.
+                [strongSelf _requestAnalysisIfNeeded];
+
                 [[ScriptsManager sharedInstance] callMetadataAvailableWithTrack:strongSelf];
             }
         });
@@ -838,9 +861,78 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
         _priorityAnalysisRequested = YES;
         
         if ([self internalURL]) {
-            [self _requestWorkerCommand:WorkerTrackCommandReadLoudnessImmediate];
+            // Deliberately not -_requestAnalysisIfNeeded.  The player is
+            // blocked on the overview at this point and this request is how it
+            // gets unblocked, so it goes out whether or not a background scan
+            // was already asked for -- that is the whole difference between
+            // the two queues.  It does not wait for the tags either: if they
+            // are not in yet, the track is measured as though it had none,
+            // which is the right way round to be wrong.
+            BOOL measuresTempo = [self _wantsTempoMeasurement];
+
+            _analysisRequested     = YES;
+            _analysisMeasuresTempo = _analysisMeasuresTempo || measuresTempo;
+
+            [self _requestWorkerCommand: WorkerTrackCommandReadLoudnessImmediate
+                          measuresTempo: _analysisMeasuresTempo];
         }
     }
+}
+
+
+// The rule is GetWantsTempoMeasurement, in DanceRhythm.m, which is where it can
+// be tested; this reads the four facts out of the track and the preferences.
+- (BOOL) _wantsTempoMeasurement
+{
+    return GetWantsTempoMeasurement(
+        [[Preferences sharedInstance] showsBPM],
+        _detectedRhythm,
+        _beatsPerMinute,
+        [self genre]
+    );
+}
+
+
+- (void) _requestAnalysisIfNeeded
+{
+    if (![self internalURL] || _cancelled) {
+        return;
+    }
+
+    // The overview is not optional the way the measurement is: the player
+    // refuses to start a track without one, so a missing overview is asked for
+    // whatever the BPM column is set to.  A track carrying an overview but no
+    // rhythm was scanned by a build, or a launch, that did not measure one.
+    BOOL needsOverview = !_overviewData;
+    BOOL wantsTempo    = [self _wantsTempoMeasurement];
+
+    if (!needsOverview && !wantsTempo) {
+        return;
+    }
+
+    if (_analysisRequested && (!wantsTempo || _analysisMeasuresTempo)) {
+        return;
+    }
+
+    _analysisRequested     = YES;
+    _analysisMeasuresTempo = _analysisMeasuresTempo || wantsTempo;
+
+    [self _requestWorkerCommand: (_priorityAnalysisRequested ?
+                                    WorkerTrackCommandReadLoudnessImmediate :
+                                    WorkerTrackCommandReadLoudness)
+                  measuresTempo: _analysisMeasuresTempo];
+}
+
+
+- (void) _handlePreferencesDidChange:(NSNotification *)note
+{
+    // Switching the BPM column back on is what this is for: every track that
+    // was passed over while it was off becomes one that wants measuring, and
+    // there is nothing else that would ask again.  The notification does not
+    // say which preference moved, so this runs on all of them -- it is a few
+    // property reads and returns without asking the worker anything in every
+    // case but the one it is here for.
+    [self _requestAnalysisIfNeeded];
 }
 
 

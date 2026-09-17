@@ -22,6 +22,14 @@
 #import "BPMAnalyzer.h"
 #import "HugAudioFile.h"
 #import "HugUtils.h"
+#import "TrackKeys.h"
+#import "WorkerService.h"
+
+// Private to WorkerService.m, and instantiable without XPC: the protocol is
+// what crosses the process boundary, not the class, so the checks below drive
+// the real worker in this process.
+@interface Worker : NSObject <WorkerProtocol>
+@end
 
 #include <sys/resource.h>
 
@@ -452,6 +460,114 @@ static void testBufferSizingCost(void)
 }
 
 
+// The worker replies on the main queue, so a command-line main() has to give it
+// one to reply on.  Returns whether the condition came true before the timeout.
+static BOOL sSpinUntil(NSTimeInterval timeout, BOOL (^condition)(void))
+{
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeout];
+
+    while (!condition() && [deadline timeIntervalSinceNow] > 0) {
+        [[NSRunLoop currentRunLoop] runMode: NSDefaultRunLoopMode
+                                 beforeDate: [NSDate dateWithTimeIntervalSinceNow:0.02]];
+    }
+
+    return condition();
+}
+
+
+// Runs one scan and hands back what came out of it, or nil if the worker chose
+// not to answer at all -- which is not a failure but one of the things being
+// checked, so the caller is told which happened rather than being made to wait
+// on a reply that was never coming.
+static NSDictionary *sScan(Worker *worker, NSURL *url, NSUUID *UUID, BOOL measuresTempo, NSTimeInterval wait)
+{
+    NSData *bookmark = [url bookmarkDataWithOptions:0 includingResourceValuesForKeys:nil relativeToURL:nil error:NULL];
+
+    __block NSDictionary *result = nil;
+    __block BOOL replied = NO;
+
+    [worker performTrackCommand: WorkerTrackCommandReadLoudness
+                           UUID: UUID
+                   bookmarkData: bookmark
+               originalFilename: [url lastPathComponent]
+                  measuresTempo: measuresTempo
+                          reply: ^(NSDictionary *dictionary) {
+        result  = dictionary;
+        replied = YES;
+    }];
+
+    sSpinUntil(wait, ^{ return replied; });
+
+    return result;
+}
+
+
+static void testTheWorkerGate(void)
+{
+    printf("\n-- what the worker does when it is told not to measure --\n");
+
+    // The decode has to be real for this: what is being checked is which keys
+    // come back out of a scan, and they come back out of the same function the
+    // app calls.
+    std::vector<float> mono = sMakeClickTrack(120.0, 20.0, 44100, 0.8);
+    NSURL *url = sWriteWAV(@"bpm-worker-gate.wav", { mono, mono }, 44100);
+    if (!url) return;
+
+    Worker *worker = [[Worker alloc] init];
+
+    // Told to measure: both keys, and the overview beside them.
+    NSUUID *measured = [NSUUID UUID];
+    NSDictionary *result = sScan(worker, url, measured, YES, 20.0);
+
+    ckTrue("a scan that measures replies", result != nil);
+    ckTrue("...with the overview it was always for", [result objectForKey:TrackKeyOverviewData] != nil);
+    ckTrue("...with a tempo", [[result objectForKey:TrackKeyDetectedBPM] doubleValue] > 0);
+    ckTrue("...and with a rhythm", [result objectForKey:TrackKeyDetectedRhythm] != nil);
+
+    // Told not to: the overview still, and neither tempo key.  Not "Unknown" --
+    // the app cannot tell an Unknown that was never looked for from one that
+    // was, so writing it would mark the track answered forever.
+    NSUUID *unmeasured = [NSUUID UUID];
+    result = sScan(worker, url, unmeasured, NO, 20.0);
+
+    ckTrue("a scan that does not measure still replies", result != nil);
+    ckTrue("...still with the overview", [result objectForKey:TrackKeyOverviewData] != nil);
+    ckTrue("...and still with the loudness", [result objectForKey:TrackKeyTrackLoudness] != nil);
+    ckTrue("...but with no tempo", [result objectForKey:TrackKeyDetectedBPM] == nil);
+    ckTrue("...and no rhythm, not even Unknown", [result objectForKey:TrackKeyDetectedRhythm] == nil);
+
+    printf("\n-- and what it does when it is asked twice --\n");
+
+    // Asking again for no more than was done: refused, silently, as before.
+    // The wait is short because what is being checked is that nothing arrives.
+    ckTrue("the same scan again is not run",
+           sScan(worker, url, unmeasured, NO, 2.0) == nil);
+
+    // But asking for more than was done: run again.  This is the whole of
+    // switching the BPM column back on -- without it, a track scanned while it
+    // was off could never be measured for the rest of the session.
+    result = sScan(worker, url, unmeasured, YES, 20.0);
+
+    ckTrue("asking for the tempo after a scan without it runs again", result != nil);
+    ckTrue("...and this time there is a tempo", [[result objectForKey:TrackKeyDetectedBPM] doubleValue] > 0);
+
+    // And now it is done, both ways round.
+    ckTrue("having measured, asking to measure again is refused",
+           sScan(worker, url, unmeasured, YES, 2.0) == nil);
+    ckTrue("having measured, asking not to is refused too",
+           sScan(worker, url, unmeasured, NO, 2.0) == nil);
+
+    // Cancelled outranks all of it.
+    NSUUID *cancelled = [NSUUID UUID];
+    [worker cancelUUID:cancelled];
+
+    ckTrue("a cancelled track is not scanned",
+           sScan(worker, url, cancelled, YES, 2.0) == nil);
+
+    [[NSFileManager defaultManager] removeItemAtURL:url error:NULL];
+}
+
+
 static void testCost(void)
 {
     printf("\n-- what it costs --\n");
@@ -490,6 +606,7 @@ int main(void)
         testNothingToMeasure();
         testLengthHint();
         testThroughAFile();
+        testTheWorkerGate();
         testCost();
 
         printf("\n%d checks, %d failed\n", sChecks, sFail);

@@ -39,13 +39,38 @@ clang -c -o "$OBJ/pffft.o" Vendor/pffft/pffft.c \
     -Wall -Wextra -Wno-missing-prototypes -Wno-shadow \
     || { echo "build failed"; exit 1; }
 
-# The app's own Objective-C.  -Wno-missing-field-initializers because these are
-# existing files and every ASBD in them is a {0}; the suite is not the place to
-# start reporting that.
-for f in Source/HugAudioFile.m Source/HugError.m Source/HugUtils.m; do
+# The app's own Objective-C.  WorkerService.m is in here because the suite drives
+# the real worker: the gate deciding whether a scan measures the tempo lives in
+# it, and a transcription of that gate would be a transcription of the thing
+# under test.  It brings MetadataParser, LoudnessMeasurer and TrackKeys with it.
+#
+# The four -Wno- flags are here because -Wall -Wextra is stricter than what the
+# project builds these files with, and every one of them fires on code that was
+# already there: an ASBD written as {0}, a signed loop counter against a size_t,
+# UTTypeConformsTo, two byte counters in WorkerService.m that nothing reads, and
+# the unused `self` that a static function inside a class body is handed.
+# A suite that reported them would report them on every run forever, which is
+# how a real warning goes unread.  Waiving them here rather than editing the
+# files keeps the suite's opinion out of the app's sources.
+for f in Source/HugAudioFile.m Source/HugError.m Source/HugUtils.m \
+         Source/WorkerService.m Source/MetadataParser.m Source/LoudnessMeasurer.m Source/TrackKeys.m; do
+
+    # WorkerService.m is the XPC service's executable and carries its own
+    # main(), which the suite already has one of.  Renaming it at the
+    # preprocessor is the whole of the accommodation: `main` appears in that
+    # file exactly once, as the definition, and the suite reaches the Worker
+    # class directly rather than through a listener.
+    EXTRA=""
+    if [ "$f" = "Source/WorkerService.m" ]; then
+        EXTRA="-Dmain=sUnusedWorkerServiceMain"
+    fi
+
     clang -c -o "$OBJ/$(basename $f .m).o" "$f" \
-        -std=gnu99 -O2 -g -fobjc-arc -Wall -Wextra -Wno-missing-field-initializers \
-        -ISource \
+        -std=gnu99 -O2 -g -fobjc-arc -Wall -Wextra \
+        -Wno-missing-field-initializers -Wno-sign-compare \
+        -Wno-deprecated-declarations -Wno-unused-but-set-variable \
+        -Wno-unused-parameter \
+        $EXTRA -ISource \
         || { echo "build failed"; exit 1; }
 done
 
@@ -62,6 +87,7 @@ clang++ -o "$OUT" Source/BPMAnalyzer.mm Tests/BPMAnalyzerTests.mm "$OBJ"/*.o \
     -std=gnu++11 -stdlib=libc++ -O2 -g -fobjc-arc -Wall -Wextra \
     -ISource -IVendor $DEFS \
     -framework Foundation -framework AudioToolbox -framework AVFoundation \
+    -framework iTunesLibrary -framework Accelerate -framework CoreMedia -framework CoreServices \
     || { echo "build failed"; exit 1; }
 
 echo
