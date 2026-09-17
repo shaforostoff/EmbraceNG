@@ -194,21 +194,54 @@ static void testWhetherToMeasure(void)
 {
     printf("\n-- whether the audio is worth asking --\n");
 
-    // The switch behind the BPM column is the feature's on and off.  Off is
-    // off whatever else is true of the track: nothing new is measured.
-    ckTrue("off, and nothing is measured",
-           !GetWantsTempoMeasurement(NO, nil, 0, nil));
-    ckTrue("off, even with everything else open",
-           !GetWantsTempoMeasurement(NO, nil, 0, @""));
+    // One decode produces two answers, and they are wanted by different parts
+    // of the app, so the table runs every combination of the three things that
+    // can close them: the BPM column, a BPM tag, a genre tag.
+    //
+    // The column governs the BPM half alone.  Hidden, there is nowhere for a
+    // measured tempo to appear, so measuring for it is work nothing reads --
+    // but the effects switching goes on switching whatever the track list
+    // shows, and it has nothing but the measurement when the file has no genre
+    // on it.  So the two rows that matter are the last two: with the column
+    // hidden, a genre-tagged track is left alone and an untagged one is not.
+    NSArray *cases = @[
+        //  column   BPM tag  genre tag     measure?
+        @[ @(YES),   @(0),    @"",          @(YES) ],   // nothing known at all
+        @[ @(YES),   @(120),  @"",          @(YES) ],   // rhythm still open
+        @[ @(YES),   @(0),    @"Tango",     @(YES) ],   // BPM still open
+        @[ @(YES),   @(120),  @"Tango",     @(NO)  ],   // both closed
 
-    // On, and the track knows nothing about itself: measure.
-    ckTrue("on, and nothing is known",
-           GetWantsTempoMeasurement(YES, nil, 0, nil));
+        @[ @(NO),    @(0),    @"",          @(YES) ],   // for the rhythm alone
+        @[ @(NO),    @(120),  @"",          @(YES) ],   // likewise
+        @[ @(NO),    @(0),    @"Tango",     @(NO)  ],   // the column is what is off
+        @[ @(NO),    @(120),  @"Tango",     @(NO)  ],
+    ];
 
-    // Already measured, so there is nothing to learn.  This is the one that
-    // keeps a set list from being re-decoded on every preference change.
-    ckTrue("measured already",
-           !GetWantsTempoMeasurement(YES, @"Tango", 0, nil));
+    for (NSArray *c in cases) {
+        BOOL      column = [c[0] boolValue];
+        NSInteger bpm    = [c[1] integerValue];
+        NSString *genre  = c[2];
+        BOOL      want   = [c[3] boolValue];
+
+        char what[160];
+        snprintf(what, sizeof(what), "column %s, %s, %s",
+                 column ? "on " : "off",
+                 bpm   ? "BPM tagged   " : "no BPM tag   ",
+                 [genre length] ? "genre tagged" : "no genre tag");
+
+        ckTrue(what, GetWantsTempoMeasurement(column, nil, bpm, genre) == want);
+    }
+
+    // Any genre closes the rhythm half, not just a danced one.  "Rock" is a DJ
+    // saying this is a cortina, which is exactly the answer the switching
+    // wanted -- the same rule GetDanceRhythm applies, read from this end.
+    ckTrue("a genre naming no dance is still an answer",
+           !GetWantsTempoMeasurement(NO, nil, 0, @"Rock"));
+
+    // Measured already, and there is nothing left to learn either way.  This is
+    // what keeps a set list from being re-decoded on every preference change.
+    ckTrue("measured already, column on",  !GetWantsTempoMeasurement(YES, @"Tango", 0, nil));
+    ckTrue("measured already, column off", !GetWantsTempoMeasurement(NO,  @"Tango", 0, nil));
 
     // "Unknown" is a measurement.  The worker writes it when it could not find
     // a tempo, and it has to count as answered, or a track that cannot be
@@ -220,32 +253,13 @@ static void testWhetherToMeasure(void)
     ckTrue("something that is not a string is not a measurement",
            GetWantsTempoMeasurement(YES, (id)@42, 0, nil));
 
-    // One tag is not enough, because two questions ride on the one decode.
-    ckTrue("a BPM tag alone still leaves the rhythm open",
-           GetWantsTempoMeasurement(YES, nil, 120, nil));
-    ckTrue("a genre tag alone still leaves the BPM open",
-           GetWantsTempoMeasurement(YES, nil, 0, @"Tango"));
-
-    // Both answered: the decode would tell us nothing we would read.  This is
-    // the case the whole sequencing change exists to reach -- it is only
-    // knowable once the tags are in.
-    ckTrue("both tags answered, so nothing to measure",
-           !GetWantsTempoMeasurement(YES, nil, 120, @"Tango"));
-
-    // Any genre closes the rhythm half, not just a danced one.  "Rock" is a DJ
-    // saying this is a cortina, which is exactly the answer CortinaEffects
-    // wanted -- the same rule GetDanceRhythm applies, read from this end.
-    ckTrue("a genre naming no dance is still an answer",
-           !GetWantsTempoMeasurement(YES, nil, 120, @"Rock"));
-
-    // The edges of "is there a tag".  An empty string is not one, and a zero
-    // BPM is not one either -- Track stores an absent BPM as 0.
-    ckTrue("an empty genre is not a tag",
-           GetWantsTempoMeasurement(YES, nil, 120, @""));
-    ckTrue("a zero BPM is not a tag",
-           GetWantsTempoMeasurement(YES, nil, 0, @"Tango"));
-    ckTrue("a genre that is not a string is not a tag",
-           GetWantsTempoMeasurement(YES, nil, 120, (id)@42));
+    // The edges of "is there a tag at all".  nil and empty are both no tag, a
+    // zero BPM is no tag -- Track stores an absent one as 0 -- and a genre that
+    // is not a string cannot be read as one.
+    ckTrue("a nil genre is no tag", GetWantsTempoMeasurement(NO, nil, 120, nil));
+    ckTrue("a genre that is not a string is no tag",
+           GetWantsTempoMeasurement(NO, nil, 120, (id)@42));
+    ckTrue("a zero BPM is no tag", GetWantsTempoMeasurement(YES, nil, 0, @"Tango"));
 }
 
 

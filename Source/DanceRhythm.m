@@ -114,16 +114,15 @@ BOOL GetWantsTempoMeasurement(
     NSInteger  taggedBPM,
     NSString  *taggedGenre
 ) {
-    if (!displaysBPM) return NO;
-
     if ([detectedRhythm isKindOfClass:[NSString class]] && [detectedRhythm length]) {
         return NO;
     }
 
-    BOOL tagAnsweredBPM = (taggedBPM != 0);
+    BOOL hasGenreTag = [taggedGenre isKindOfClass:[NSString class]] &&
+                       [taggedGenre length] > 0;
 
-    BOOL tagAnsweredRhythm = [taggedGenre isKindOfClass:[NSString class]] &&
-                             [taggedGenre length] > 0;
+    BOOL wantsBPM    = displaysBPM && (taggedBPM == 0);
+    BOOL wantsRhythm = !hasGenreTag;
 
-    return !(tagAnsweredBPM && tagAnsweredRhythm);
+    return wantsBPM || wantsRhythm;
 }

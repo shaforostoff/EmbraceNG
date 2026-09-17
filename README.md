@@ -44,11 +44,18 @@ file carrying both is scanned for its waveform and not measured. The wait is a
 tag parse against a decode that takes seconds, and only for the first track:
 after that the metadata queue is far ahead of the scanning one.
 
-**The BPM column is the feature's on and off.** With it off -- View > Track
-Attributes > Beats Per Minute -- nothing is measured, because nothing would
-read the answer. Switching it off mid-set does not throw away what has already been
-measured; that is paid for, and the effects go on using it. It stops further
-tracks being analysed, and switching the column back on starts them again.
+**The BPM column switches off the half of this that feeds it.** With it off --
+View > Track Attributes > Beats Per Minute -- no track is measured to fill in a
+tempo, because there is nowhere for that tempo to appear. A track with no genre
+tag is still measured, because the cortina switching below has nothing else to
+go on and goes on working whatever the track list is showing. So a library with
+genre tags goes quiet when the column is hidden, and one without them does not.
+
+Switching the column off mid-set never throws away what has been measured --
+that is paid for, and the effects go on using it. Switching it back on starts
+the tracks that were passed over, and costs nothing for the ones that were
+measured for their rhythm in the meantime: both answers come out of the one
+decode, so the tempo was kept even while nothing was showing it.
 
 The analysis is `bpmcore`, from
 [foo_rubato](https://github.com/shaforostoff/foo_rubato) and vendored verbatim

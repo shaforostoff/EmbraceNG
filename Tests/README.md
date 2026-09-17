@@ -535,7 +535,7 @@ answers.
 Tests/run-cortina-tests.sh   # headless; instantiates audio units, renders nothing
 ```
 
-98 checks, all passing on macOS 14.8.8.
+101 checks, all passing on macOS 14.8.8.
 
 **Reading a genre tag** is a table of what collections really hold, and the
 compound tags are why it is a table. "Tango Vals" is a vals and "Tango Milonga"
@@ -555,18 +555,23 @@ underneath us, and reads as `Unknown` rather than being guessed at.
 
 **Whether to measure at all** is the same subject read from the other end, and
 `GetWantsTempoMeasurement` is tested here because this is where the rest of that
-subject lives. The BPM column is the feature's switch, so off means no, whatever
-else is true. Past that, a measurement is worth a decode only while one of the
-two answers it produces is still open: one tag is not enough, because a BPM tag
-closes the column's half and a genre tag closes the rhythm's, and the decode
-produces both. A genre naming no dance closes it just the same -- the `Rock`
-case again, from the other side.
+subject lives. One decode produces two answers and they are read by different
+parts of the app, so the checks are a table over every combination of the three
+things that can close them: the BPM column, a BPM tag, a genre tag.
 
-The edges are all "is this really an answer": an empty genre is not a tag, a
-zero BPM is not a tag, and a rhythm of `Unknown` *is* a measurement. That last
-one is what stops a track that cannot be measured from being decoded again on
-every launch, and it is the reason the worker omits the key rather than writing
-`Unknown` when it was never asked to look.
+The column governs the BPM half alone, and the last two rows of that table are
+why it is worth a table. Hidden, a genre-tagged track is left alone -- there is
+nowhere for a tempo to appear and the genre already says what the effects need
+-- and an untagged one is measured anyway, because the effects switching has
+nothing else to go on and goes on switching whatever the track list shows. A
+genre naming no dance closes the rhythm half just the same: the `Rock` case
+again, from the other side.
+
+The edges are all "is this really an answer": nil and an empty string are both
+no genre, a zero BPM is no tag, and a rhythm of `Unknown` *is* a measurement.
+That last one is what stops a track that cannot be measured from being decoded
+again on every launch, and it is the reason the worker omits the key rather
+than writing `Unknown` when it was never asked to look.
 
 **The rule** -- tag first, measurement second -- has one case that is easy to
 get wrong, and it has a check of its own. A tag reading "Rock" names none of the

@@ -74,17 +74,25 @@ extern NSString *GetNameForDanceRhythm(DanceRhythm rhythm);
 //
 // The measurement is not free -- it rides a decode, and the decode is the cost
 // -- so it is worth doing only while one of the two answers it produces is
-// still open.  The tags may have closed either, both or neither:
+// still open.  They are open separately, and they are read by different parts
+// of the app, so they are asked separately:
 //
-//   `taggedBPM`    fills the BPM column, so a non-zero one closes that half.
-//   `taggedGenre`  settles the rhythm, and *any* non-empty genre does, because
-//                  one naming no dance is a DJ saying this is a cortina.  That
-//                  is GetDanceRhythm's rule above, read from the other end.
+//   The BPM half is open when the column is showing and no tag has filled it.
+//   `displaysBPM` is the preference behind that column, and it governs this
+//   half and only this half: with the column hidden there is nowhere for a
+//   measured tempo to appear, so measuring for it is work nothing reads.
 //
-// `displaysBPM` is the feature's on and off, and comes from the preference
-// behind the BPM column.  Off, nothing new is measured; what was measured
-// before it went off is already paid for and is not thrown away, which is why
-// this answers a question about starting work rather than about keeping it.
+//   The rhythm half is open when there is no genre tag, and *any* non-empty
+//   genre closes it, because one naming no dance is a DJ saying this is a
+//   cortina -- GetDanceRhythm's rule above, read from the other end.  This
+//   half does not consult `displaysBPM`, because what reads it is the effects
+//   switching, which goes on working whatever the track list is showing.  An
+//   untagged track is measured with the column hidden for that reason alone.
+//
+// So a hidden column stops a genre-tagged track being measured and does not
+// stop an untagged one.  Both halves come out of the one decode, so whichever
+// opened it, both answers are kept -- showing the column again then costs
+// nothing for a track already measured for its rhythm.
 //
 // `detectedRhythm` is what a previous scan reported, and any non-nil value
 // closes both halves.  The worker reports a rhythm whatever it found -- the
