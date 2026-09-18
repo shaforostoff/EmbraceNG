@@ -42,7 +42,6 @@
 		55169D521F9ACBFA003779FA /* test_3s_c4.m4a in Resources */ = {isa = PBXBuildFile; fileRef = 55169D4D1F9ACBFA003779FA /* test_3s_c4.m4a */; };
 		55169D531F9ACBFA003779FA /* test_3s_g4.m4a in Resources */ = {isa = PBXBuildFile; fileRef = 55169D4E1F9ACBFA003779FA /* test_3s_g4.m4a */; };
 		55169D541F9ACBFA003779FA /* test_3s_f4.m4a in Resources */ = {isa = PBXBuildFile; fileRef = 55169D4F1F9ACBFA003779FA /* test_3s_f4.m4a */; };
-		5517B470233B3F6C00FB45A4 /* Archive.sh in Resources */ = {isa = PBXBuildFile; fileRef = 5517B46F233B3F6C00FB45A4 /* Archive.sh */; };
 		551CE71321B3A3D800D422E4 /* HugLevelMeter.m in Sources */ = {isa = PBXBuildFile; fileRef = 551CE71221B3A3D800D422E4 /* HugLevelMeter.m */; };
 		551CE71A21B3CE9500D422E4 /* HugLinearRamper.m in Sources */ = {isa = PBXBuildFile; fileRef = 551CE71921B3CE9500D422E4 /* HugLinearRamper.m */; };
 		551CE71D21B3E24400D422E4 /* HugStereoField.m in Sources */ = {isa = PBXBuildFile; fileRef = 551CE71C21B3E24400D422E4 /* HugStereoField.m */; };
@@ -1257,7 +1256,6 @@
 				550D882B18AC3C6000CC7E3A /* rate_44.m4a in Resources */,
 				55BC0B141878014E00D84481 /* EffectsWindow.xib in Resources */,
 				55A0B1761890A81900866F04 /* test_e.m4a in Resources */,
-				5517B470233B3F6C00FB45A4 /* Archive.sh in Resources */,
 				55CF848E18BF27AC00EF33F7 /* Embrace.sdef in Resources */,
 				556B496420CF772D00A4E83E /* Assets.xcassets in Resources */,
 				55C82A9E1B57423F0067DEBC /* AUBandpass.aupreset in Resources */,
