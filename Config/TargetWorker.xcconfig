@@ -18,3 +18,22 @@ HEADER_SEARCH_PATHS = $(inherited) $(SRCROOT)/Vendor
 // pffft has no double variant, so the pair is not free -- real_fft.cpp refuses
 // to compile if one is changed without the other.
 GCC_PREPROCESSOR_DEFINITIONS = $(inherited) BPMCORE_FFT_PFFFT BPMCORE_FFT_SCALAR_TYPE=float
+
+// Link-time optimisation, for the optimised configurations only.
+//
+// The worker is where it pays: bpmcore, pffft and the loudness measurer are a
+// dozen C and C++ translation units that call each other constantly, and
+// without this the optimiser never sees across one of those boundaries.
+// Measured on a Release install it takes the worker from 686KB to 653KB, a
+// little under 5%, for about ten seconds of extra link time.
+//
+// It is deliberately not on the app target.  The same measurement there moves
+// 1,554,944 bytes to 1,554,784 -- 160 bytes, which is nothing -- and the app
+// is where declick, dehum and the parametric EQ live.  Those carry per-file
+// -O2 and hand-written accumulator loops tuned against a real-time deadline,
+// and perturbing their codegen for no measurable size win is a bad trade.
+//
+// Thin LTO was measured too and is worse than either: cross-module inlining
+// under -Os made the app 33KB *larger* and left the worker unchanged.
+LLVM_LTO[config=Release]    = YES
+LLVM_LTO[config=Submission] = YES
