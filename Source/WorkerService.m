@@ -72,8 +72,6 @@ static NSDictionary *sReadLoudness(NSURL *internalURL, BOOL measuresTempo)
         AudioStreamBasicDescription format = [audioFile format];
 
         NSInteger framesRemaining = fileLengthFrames;
-        NSInteger bytesRemaining  = framesRemaining * format.mBytesPerFrame;
-        NSInteger bytesRead = 0;
 
         LoudnessMeasurer *measurer = LoudnessMeasurerCreate(format.mChannelsPerFrame, format.mSampleRate, framesRemaining);
 
@@ -88,10 +86,25 @@ static NSDictionary *sReadLoudness(NSURL *internalURL, BOOL measuresTempo)
         BPMAnalyzer *analyzer = measuresTempo ?
             BPMAnalyzerCreate(format.mChannelsPerFrame, format.mSampleRate, framesRemaining) : NULL;
 
-        AudioBufferList *fillBufferList = HugAudioBufferListCreate(format.mChannelsPerFrame, 4096 * 16, YES);
+        const UInt32 kFillFrames = 4096 * 16;
+        AudioBufferList *fillBufferList = HugAudioBufferListCreate(format.mChannelsPerFrame, kFillFrames, YES);
 
         BOOL ok = YES;
         while (ok) {
+            // ExtAudioFileRead reads mDataByteSize to find out how much room it
+            // has and then overwrites it with how much it used, so a read that
+            // came back short leaves the list describing a buffer smaller than
+            // the one that is actually there.  Left alone that only ever
+            // ratchets down: every later read is capped by whatever the
+            // shortest one so far happened to be.
+            //
+            // The other three read loops in the tree -- HugAudioSource's fill,
+            // dehum's scout, and the audio units' render -- all put the size
+            // back each time round.  This one did not.
+            for (UInt32 i = 0; i < fillBufferList->mNumberBuffers; i++) {
+                fillBufferList->mBuffers[i].mDataByteSize = kFillFrames * sizeof(float);
+            }
+
             UInt32 frameCount = (UInt32)framesRemaining;
             ok = [audioFile readFrames:&frameCount intoBufferList:fillBufferList];
 
@@ -101,11 +114,8 @@ static NSDictionary *sReadLoudness(NSURL *internalURL, BOOL measuresTempo)
             } else {
                 break;
             }
-            
+
             framesRemaining -= frameCount;
-        
-            bytesRead      += frameCount * format.mBytesPerFrame;
-            bytesRemaining -= frameCount * format.mBytesPerFrame;
 
             if (framesRemaining == 0) {
                 break;

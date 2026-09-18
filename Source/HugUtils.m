@@ -52,7 +52,20 @@ NSTimeInterval HugGetDeltaInSecondsForHostTimes(UInt64 time1, UInt64 time2)
 
 AudioBufferList *HugAudioBufferListCreate(UInt32 channelCount, UInt32 frameCount, BOOL allocateData)
 {
-    AudioBufferList *bufferList = calloc(channelCount, sizeof(AudioBufferList));
+    if (!channelCount) return NULL;
+
+    // An AudioBufferList is a count followed by a variable-length array of
+    // AudioBuffer declared as [1], so the size of one holding n of them is the
+    // struct plus the n-1 that are not in it already.
+    //
+    // This used to ask for channelCount whole AudioBufferLists, which is larger
+    // than what is needed for every n -- so it was never wrong, just wrong for
+    // the reason it looked right, and it would have stopped being big enough if
+    // the struct's leading field had ever grown relative to AudioBuffer.
+    size_t size = sizeof(AudioBufferList) + ((channelCount - 1) * sizeof(AudioBuffer));
+
+    AudioBufferList *bufferList = calloc(1, size);
+    if (!bufferList) return NULL;
 
     bufferList->mNumberBuffers = channelCount;
 
