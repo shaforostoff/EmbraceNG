@@ -1033,6 +1033,36 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
 }
 
 
+// -detectDuplicates walks the whole set list and assigns this on every track
+// every time anything about the list changes -- which is almost always the
+// value it already held.  Each of those is a KVO notification, and every
+// visible cell observes this key and answers one by rebuilding its whole
+// contents: fonts, constraints, four joined attribute strings and a date
+// format.  On a long set list that is the difference between an edit being
+// instant and being felt.
+//
+// A guard in the setter is not enough on its own.  Automatic KVO swizzles the
+// setter from outside, so will/didChange fire around it whatever the body
+// does or does not do -- measured at 100 notifications for 100 no-op writes.
+// Turning the automatic notification off and posting it by hand inside the
+// guard is what actually makes an unchanged write cost nothing.
+//
++ (BOOL) automaticallyNotifiesObserversOfDuplicate
+{
+    return NO;
+}
+
+
+- (void) setDuplicate:(BOOL)duplicate
+{
+    if (_duplicate == duplicate) return;
+
+    [self willChangeValueForKey:@"duplicate"];
+    _duplicate = duplicate;
+    [self didChangeValueForKey:@"duplicate"];
+}
+
+
 - (void) setError:(NSError *)error
 {
     if (_error != error) {
