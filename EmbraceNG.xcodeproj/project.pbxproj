@@ -361,6 +361,7 @@
 		DEC1DE000000000000000003 /* dehum_core.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = dehum_core.h; path = Source/dehum_core.h; sourceTree = "<group>"; };
 		DEC1DE000000000000000004 /* dehum_core.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = dehum_core.cpp; path = Source/dehum_core.cpp; sourceTree = "<group>"; };
 		DEC1DE000000000000000005 /* RestorationAudioUnit.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RestorationAudioUnit.h; path = Source/RestorationAudioUnit.h; sourceTree = "<group>"; };
+		DEC1DE000000000000000099 /* EmbraceAudioUnitUtils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = EmbraceAudioUnitUtils.h; path = Source/EmbraceAudioUnitUtils.h; sourceTree = "<group>"; };
 		DEC1DE000000000000000006 /* RestorationAudioUnit.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = RestorationAudioUnit.mm; path = Source/RestorationAudioUnit.mm; sourceTree = "<group>"; };
 		DEC1DE000000000000000031 /* paraeq_core.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = paraeq_core.h; path = Source/paraeq_core.h; sourceTree = "<group>"; };
 		DEC1DE000000000000000032 /* paraeq_core.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = paraeq_core.cpp; path = Source/paraeq_core.cpp; sourceTree = "<group>"; };
@@ -711,6 +712,7 @@
 				DEC1DE000000000000000003 /* dehum_core.h */,
 				DEC1DE000000000000000004 /* dehum_core.cpp */,
 				DEC1DE000000000000000005 /* RestorationAudioUnit.h */,
+				DEC1DE000000000000000099 /* EmbraceAudioUnitUtils.h */,
 				DEC1DE000000000000000006 /* RestorationAudioUnit.mm */,
 				DEC1DE000000000000000007 /* ParameterFormView.h */,
 				DEC1DE000000000000000008 /* ParameterFormView.m */,

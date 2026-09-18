@@ -9,6 +9,7 @@
 
 #import "ParametricEQView.h"
 #import "ParameterFormView.h"
+#import "EmbraceAudioUnitUtils.h"
 
 #import <AVFoundation/AVFoundation.h>
 #import <CoreAudioKit/CoreAudioKit.h>
@@ -44,45 +45,6 @@ struct ParametricEQState {
     float get(int index) const { return value[index].load(std::memory_order_relaxed); }
     bool  isBypassed()   const { return bypassed.load(std::memory_order_relaxed); }
 };
-
-
-// Embrace's graph always hands us real buffers.  A host that does not is asking
-// the unit to supply its own, which we do not, so say so rather than carrying a
-// scratch buffer whose lifetime the render thread would have to reason about.
-//
-static AUAudioUnitStatus sPrepareBufferList(AudioBufferList *bufferList, AUAudioFrameCount frameCount)
-{
-    for (UInt32 i = 0; i < bufferList->mNumberBuffers; i++) {
-        if (!bufferList->mBuffers[i].mData) return kAudioUnitErr_InvalidParameter;
-        bufferList->mBuffers[i].mDataByteSize = frameCount * sizeof(float);
-    }
-
-    return noErr;
-}
-
-
-static AUParameter *sMakeParameter(
-    NSString *identifier, NSString *name, AUParameterAddress address,
-    AUValue min, AUValue max, AUValue value, AudioUnitParameterUnit unit,
-    NSArray<NSString *> *valueStrings)
-{
-    AUParameter *parameter = [AUParameterTree
-        createParameterWithIdentifier: identifier
-                                 name: name
-                              address: address
-                                  min: min
-                                  max: max
-                                 unit: unit
-                             unitName: nil
-                                flags: kAudioUnitParameterFlag_IsReadable |
-                                       kAudioUnitParameterFlag_IsWritable
-                         valueStrings: valueStrings
-                  dependentParameters: nil];
-
-    [parameter setValue:value];
-
-    return parameter;
-}
 
 
 // The one place the fifteen parameters become core parameters.  Both the render
@@ -336,7 +298,7 @@ struct ParametricEQDSP {
     {
         if (!pullInputBlock) return kAudioUnitErr_NoConnection;
 
-        AUAudioUnitStatus err = sPrepareBufferList(outputData, frameCount);
+        AUAudioUnitStatus err = EmbraceAUPrepareBufferList(outputData, frameCount);
         if (err) return err;
 
         AudioUnitRenderActionFlags pullFlags = 0;
@@ -414,74 +376,74 @@ struct ParametricEQDSP {
     ];
 
     return @[
-        sMakeParameter(@"filterFrequency", NSLocalizedString(@"Filter Frequency", nil),
+        EmbraceAUMakeParameter(@"filterFrequency", NSLocalizedString(@"Filter Frequency", nil),
             EmbraceParametricEQParameterFilterFrequency,
             paraeq::kHpFreqMin, paraeq::kHpFreqMax, d.hpFrequency,
             kAudioUnitParameterUnit_Hertz, nil),
 
-        sMakeParameter(@"filterSlope", NSLocalizedString(@"Filter Slope", nil),
+        EmbraceAUMakeParameter(@"filterSlope", NSLocalizedString(@"Filter Slope", nil),
             EmbraceParametricEQParameterFilterSlope,
             0, 2, d.hpSlope, kAudioUnitParameterUnit_Indexed, slopeStrings),
 
-        sMakeParameter(@"lfGain", NSLocalizedString(@"LF Gain", nil),
+        EmbraceAUMakeParameter(@"lfGain", NSLocalizedString(@"LF Gain", nil),
             EmbraceParametricEQParameterLFGain,
             -paraeq::kGainMaxDb, paraeq::kGainMaxDb, d.lfGain,
             kAudioUnitParameterUnit_Decibels, nil),
 
-        sMakeParameter(@"lfFrequency", NSLocalizedString(@"LF Frequency", nil),
+        EmbraceAUMakeParameter(@"lfFrequency", NSLocalizedString(@"LF Frequency", nil),
             EmbraceParametricEQParameterLFFrequency,
             paraeq::kLfFreqMin, paraeq::kLfFreqMax, d.lfFrequency,
             kAudioUnitParameterUnit_Hertz, nil),
 
-        sMakeParameter(@"lfBell", NSLocalizedString(@"LF Shape", nil),
+        EmbraceAUMakeParameter(@"lfBell", NSLocalizedString(@"LF Shape", nil),
             EmbraceParametricEQParameterLFBell,
             0, 1, d.lfBell ? 1 : 0, kAudioUnitParameterUnit_Indexed, shapeStrings),
 
-        sMakeParameter(@"lmfGain", NSLocalizedString(@"LMF Gain", nil),
+        EmbraceAUMakeParameter(@"lmfGain", NSLocalizedString(@"LMF Gain", nil),
             EmbraceParametricEQParameterLMFGain,
             -paraeq::kGainMaxDb, paraeq::kGainMaxDb, d.lmfGain,
             kAudioUnitParameterUnit_Decibels, nil),
 
-        sMakeParameter(@"lmfFrequency", NSLocalizedString(@"LMF Frequency", nil),
+        EmbraceAUMakeParameter(@"lmfFrequency", NSLocalizedString(@"LMF Frequency", nil),
             EmbraceParametricEQParameterLMFFrequency,
             paraeq::kLmfFreqMin, paraeq::kLmfFreqMax, d.lmfFrequency,
             kAudioUnitParameterUnit_Hertz, nil),
 
-        sMakeParameter(@"lmfQ", NSLocalizedString(@"LMF Q", nil),
+        EmbraceAUMakeParameter(@"lmfQ", NSLocalizedString(@"LMF Q", nil),
             EmbraceParametricEQParameterLMFQ,
             paraeq::kQMin, paraeq::kQMax, d.lmfQ,
             kAudioUnitParameterUnit_Generic, nil),
 
-        sMakeParameter(@"hmfGain", NSLocalizedString(@"HMF Gain", nil),
+        EmbraceAUMakeParameter(@"hmfGain", NSLocalizedString(@"HMF Gain", nil),
             EmbraceParametricEQParameterHMFGain,
             -paraeq::kGainMaxDb, paraeq::kGainMaxDb, d.hmfGain,
             kAudioUnitParameterUnit_Decibels, nil),
 
-        sMakeParameter(@"hmfFrequency", NSLocalizedString(@"HMF Frequency", nil),
+        EmbraceAUMakeParameter(@"hmfFrequency", NSLocalizedString(@"HMF Frequency", nil),
             EmbraceParametricEQParameterHMFFrequency,
             paraeq::kHmfFreqMin, paraeq::kHmfFreqMax, d.hmfFrequency,
             kAudioUnitParameterUnit_Hertz, nil),
 
-        sMakeParameter(@"hmfQ", NSLocalizedString(@"HMF Q", nil),
+        EmbraceAUMakeParameter(@"hmfQ", NSLocalizedString(@"HMF Q", nil),
             EmbraceParametricEQParameterHMFQ,
             paraeq::kQMin, paraeq::kQMax, d.hmfQ,
             kAudioUnitParameterUnit_Generic, nil),
 
-        sMakeParameter(@"hfGain", NSLocalizedString(@"HF Gain", nil),
+        EmbraceAUMakeParameter(@"hfGain", NSLocalizedString(@"HF Gain", nil),
             EmbraceParametricEQParameterHFGain,
             -paraeq::kGainMaxDb, paraeq::kGainMaxDb, d.hfGain,
             kAudioUnitParameterUnit_Decibels, nil),
 
-        sMakeParameter(@"hfFrequency", NSLocalizedString(@"HF Frequency", nil),
+        EmbraceAUMakeParameter(@"hfFrequency", NSLocalizedString(@"HF Frequency", nil),
             EmbraceParametricEQParameterHFFrequency,
             paraeq::kHfFreqMin, paraeq::kHfFreqMax, d.hfFrequency,
             kAudioUnitParameterUnit_Hertz, nil),
 
-        sMakeParameter(@"hfBell", NSLocalizedString(@"HF Shape", nil),
+        EmbraceAUMakeParameter(@"hfBell", NSLocalizedString(@"HF Shape", nil),
             EmbraceParametricEQParameterHFBell,
             0, 1, d.hfBell ? 1 : 0, kAudioUnitParameterUnit_Indexed, shapeStrings),
 
-        sMakeParameter(@"outputGain", NSLocalizedString(@"Output", nil),
+        EmbraceAUMakeParameter(@"outputGain", NSLocalizedString(@"Output", nil),
             EmbraceParametricEQParameterOutputGain,
             -paraeq::kOutputMaxDb, paraeq::kOutputMaxDb, d.outputGain,
             kAudioUnitParameterUnit_Decibels, nil)

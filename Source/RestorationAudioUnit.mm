@@ -6,6 +6,7 @@
 #undef auto
 
 #import "RestorationAudioUnit.h"
+#import "EmbraceAudioUnitUtils.h"
 
 #import "declick_core.h"
 #import "dehum_core.h"
@@ -50,44 +51,6 @@ struct RestorationState {
     float get(int index) const { return value[index].load(std::memory_order_relaxed); }
     bool  isBypassed()   const { return bypassed.load(std::memory_order_relaxed); }
 };
-
-
-// Embrace's graph always hands us real buffers.  A host that does not is asking
-// the unit to supply its own, which we do not, so say so rather than carrying a
-// scratch buffer whose lifetime the render thread would have to reason about.
-//
-static AUAudioUnitStatus sPrepareBufferList(AudioBufferList *bufferList, AUAudioFrameCount frameCount)
-{
-    for (UInt32 i = 0; i < bufferList->mNumberBuffers; i++) {
-        if (!bufferList->mBuffers[i].mData) return kAudioUnitErr_InvalidParameter;
-        bufferList->mBuffers[i].mDataByteSize = frameCount * sizeof(float);
-    }
-
-    return noErr;
-}
-
-
-static AUParameter *sMakeParameter(
-    NSString *identifier, NSString *name, AUParameterAddress address,
-    AUValue min, AUValue max, AUValue value, AudioUnitParameterUnit unit)
-{
-    AUParameter *parameter = [AUParameterTree
-        createParameterWithIdentifier: identifier
-                                 name: name
-                              address: address
-                                  min: min
-                                  max: max
-                                 unit: unit
-                             unitName: nil
-                                flags: kAudioUnitParameterFlag_IsReadable |
-                                       kAudioUnitParameterFlag_IsWritable
-                         valueStrings: nil
-                  dependentParameters: nil];
-
-    [parameter setValue:value];
-
-    return parameter;
-}
 
 
 #pragma mark - Base Unit
@@ -422,13 +385,13 @@ struct DeclickDSP {
     declick::Params defaults = declick::Params::defaults();
 
     return @[
-        sMakeParameter(@"sensitivity", NSLocalizedString(@"Sensitivity",  nil), 0, 0,   1,  defaults.sensitivity, kAudioUnitParameterUnit_Generic),
-        sMakeParameter(@"extent",      NSLocalizedString(@"Extent",       nil), 1, 0,   1,  defaults.extent,      kAudioUnitParameterUnit_Generic),
-        sMakeParameter(@"maxLength",   NSLocalizedString(@"Max Repair",   nil), 2, 0.2, 20, defaults.maxLengthMs, kAudioUnitParameterUnit_Milliseconds),
-        sMakeParameter(@"depth",       NSLocalizedString(@"Repair Depth", nil), 3, 0,   1,  defaults.depth,       kAudioUnitParameterUnit_Generic),
-        sMakeParameter(@"passes",      NSLocalizedString(@"Passes",       nil), 4, 1,   3,  defaults.passes,      kAudioUnitParameterUnit_Indexed),
-        sMakeParameter(@"order",       NSLocalizedString(@"Model Order",  nil), 5, declick::kMinOrder, declick::kMaxOrder, defaults.order, kAudioUnitParameterUnit_Indexed),
-        sMakeParameter(@"dryWet",      NSLocalizedString(@"Dry/Wet",      nil), 6, 0,   1,  defaults.dryWet,      kAudioUnitParameterUnit_Generic)
+        EmbraceAUMakeParameter(@"sensitivity", NSLocalizedString(@"Sensitivity",  nil), 0, 0,   1,  defaults.sensitivity, kAudioUnitParameterUnit_Generic),
+        EmbraceAUMakeParameter(@"extent",      NSLocalizedString(@"Extent",       nil), 1, 0,   1,  defaults.extent,      kAudioUnitParameterUnit_Generic),
+        EmbraceAUMakeParameter(@"maxLength",   NSLocalizedString(@"Max Repair",   nil), 2, 0.2, 20, defaults.maxLengthMs, kAudioUnitParameterUnit_Milliseconds),
+        EmbraceAUMakeParameter(@"depth",       NSLocalizedString(@"Repair Depth", nil), 3, 0,   1,  defaults.depth,       kAudioUnitParameterUnit_Generic),
+        EmbraceAUMakeParameter(@"passes",      NSLocalizedString(@"Passes",       nil), 4, 1,   3,  defaults.passes,      kAudioUnitParameterUnit_Indexed),
+        EmbraceAUMakeParameter(@"order",       NSLocalizedString(@"Model Order",  nil), 5, declick::kMinOrder, declick::kMaxOrder, defaults.order, kAudioUnitParameterUnit_Indexed),
+        EmbraceAUMakeParameter(@"dryWet",      NSLocalizedString(@"Dry/Wet",      nil), 6, 0,   1,  defaults.dryWet,      kAudioUnitParameterUnit_Generic)
     ];
 }
 
@@ -508,7 +471,7 @@ struct DeclickDSP {
         // say an allocation -- on the render thread.
         if (!dsp->configured) return kAudioUnitErr_Uninitialized;
 
-        AUAudioUnitStatus err = sPrepareBufferList(outputData, frameCount);
+        AUAudioUnitStatus err = EmbraceAUPrepareBufferList(outputData, frameCount);
         if (err) return err;
 
         declick::scoped_flush_denormals ftz;
@@ -775,13 +738,13 @@ static int sScoutHumLines(NSURL *fileURL, float sensitivity, float searchTo,
     // Frequency and Rumble both take zero as an off position rather than as a
     // frequency: 0 Hz means detect automatically, and no high-pass at all.
     return @[
-        sMakeParameter(@"sensitivity", NSLocalizedString(@"Sensitivity", nil), 0, 0,   1,   defaults.sensitivity, kAudioUnitParameterUnit_Generic),
-        sMakeParameter(@"bandwidth",   NSLocalizedString(@"Bandwidth",   nil), 1, 0.1, 5,   defaults.bandwidth,   kAudioUnitParameterUnit_Hertz),
-        sMakeParameter(@"searchTo",    NSLocalizedString(@"Search To",   nil), 2, 40,  dehum::kSearchCeil,   defaults.searchTo,  kAudioUnitParameterUnit_Hertz),
-        sMakeParameter(@"harmonics",   NSLocalizedString(@"Harmonics",   nil), 3, 1,   dehum::kMaxHarmonics, defaults.harmonics, kAudioUnitParameterUnit_Indexed),
-        sMakeParameter(@"frequency",   NSLocalizedString(@"Frequency",   nil), 4, 0,   500, defaults.frequency,   kAudioUnitParameterUnit_Hertz),
-        sMakeParameter(@"rumble",      NSLocalizedString(@"Rumble",      nil), 5, 0,   200, defaults.rumbleHz,    kAudioUnitParameterUnit_Hertz),
-        sMakeParameter(@"dryWet",      NSLocalizedString(@"Dry/Wet",     nil), 6, 0,   1,   defaults.dryWet,      kAudioUnitParameterUnit_Generic)
+        EmbraceAUMakeParameter(@"sensitivity", NSLocalizedString(@"Sensitivity", nil), 0, 0,   1,   defaults.sensitivity, kAudioUnitParameterUnit_Generic),
+        EmbraceAUMakeParameter(@"bandwidth",   NSLocalizedString(@"Bandwidth",   nil), 1, 0.1, 5,   defaults.bandwidth,   kAudioUnitParameterUnit_Hertz),
+        EmbraceAUMakeParameter(@"searchTo",    NSLocalizedString(@"Search To",   nil), 2, 40,  dehum::kSearchCeil,   defaults.searchTo,  kAudioUnitParameterUnit_Hertz),
+        EmbraceAUMakeParameter(@"harmonics",   NSLocalizedString(@"Harmonics",   nil), 3, 1,   dehum::kMaxHarmonics, defaults.harmonics, kAudioUnitParameterUnit_Indexed),
+        EmbraceAUMakeParameter(@"frequency",   NSLocalizedString(@"Frequency",   nil), 4, 0,   500, defaults.frequency,   kAudioUnitParameterUnit_Hertz),
+        EmbraceAUMakeParameter(@"rumble",      NSLocalizedString(@"Rumble",      nil), 5, 0,   200, defaults.rumbleHz,    kAudioUnitParameterUnit_Hertz),
+        EmbraceAUMakeParameter(@"dryWet",      NSLocalizedString(@"Dry/Wet",     nil), 6, 0,   1,   defaults.dryWet,      kAudioUnitParameterUnit_Generic)
     ];
 }
 
@@ -902,7 +865,7 @@ static int sScoutHumLines(NSURL *fileURL, float sensitivity, float searchTo,
         // allocation at a sample rate that was only ever a guess.
         if (!dsp->configured) return kAudioUnitErr_Uninitialized;
 
-        AUAudioUnitStatus err = sPrepareBufferList(outputData, frameCount);
+        AUAudioUnitStatus err = EmbraceAUPrepareBufferList(outputData, frameCount);
         if (err) return err;
 
         AudioUnitRenderActionFlags pullFlags = 0;
