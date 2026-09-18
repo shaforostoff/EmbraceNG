@@ -44,14 +44,17 @@ clang -c -o "$OBJ/pffft.o" Vendor/pffft/pffft.c \
 # it, and a transcription of that gate would be a transcription of the thing
 # under test.  It brings MetadataParser, LoudnessMeasurer and TrackKeys with it.
 #
-# The four -Wno- flags are here because -Wall -Wextra is stricter than what the
+# The -Wno- flags are here because -Wall -Wextra is stricter than what the
 # project builds these files with, and every one of them fires on code that was
 # already there: an ASBD written as {0}, a signed loop counter against a size_t,
-# UTTypeConformsTo, two byte counters in WorkerService.m that nothing reads, and
-# the unused `self` that a static function inside a class body is handed.
-# A suite that reported them would report them on every run forever, which is
-# how a real warning goes unread.  Waiving them here rather than editing the
-# files keeps the suite's opinion out of the app's sources.
+# UTTypeConformsTo, and the unused `self` that a static function inside a class
+# body is handed.  A suite that reported them would report them on every run
+# forever, which is how a real warning goes unread.  Waiving them here rather
+# than editing the files keeps the suite's opinion out of the app's sources.
+#
+# -Wno-unused-but-set-variable was for two byte counters in WorkerService.m that
+# nothing read.  They are gone, so it is too -- and if either comes back the
+# suite says so.
 for f in Source/HugAudioFile.m Source/HugError.m Source/HugUtils.m \
          Source/WorkerService.m Source/MetadataParser.m Source/LoudnessMeasurer.m Source/TrackKeys.m; do
 
@@ -68,7 +71,7 @@ for f in Source/HugAudioFile.m Source/HugError.m Source/HugUtils.m \
     clang -c -o "$OBJ/$(basename $f .m).o" "$f" \
         -std=gnu99 -O2 -g -fobjc-arc -Wall -Wextra \
         -Wno-missing-field-initializers -Wno-sign-compare \
-        -Wno-deprecated-declarations -Wno-unused-but-set-variable \
+        -Wno-deprecated-declarations \
         -Wno-unused-parameter \
         $EXTRA -ISource \
         || { echo "build failed"; exit 1; }

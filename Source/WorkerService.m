@@ -12,10 +12,26 @@
 
 #import <iTunesLibrary/iTunesLibrary.h>
 
+#include <os/lock.h>
+
 static dispatch_queue_t sMetadataQueue           = nil;
 static dispatch_queue_t sLibraryQueue            = nil;
 static dispatch_queue_t sLoudnessImmediateQueue  = nil;
 static dispatch_queue_t sLoudnessBackgroundQueue = nil;
+
+// Both of these are reached from four threads: -cancelUUID: arrives on whatever
+// queue the XPC connection hands it to, and the three work queues below read
+// them.  sScannedUUIDs is worse than that -- the immediate and background
+// loudness queues are two separate serial queues, so both used to read and
+// write the same NSMutableDictionary with nothing between them.  A dictionary
+// mutated from two threads at once does not merely give a stale answer, it
+// corrupts.
+//
+// One lock covers both, and the check-and-claim below is inside it as a unit:
+// reading "has this been scanned" and writing "it has now" have to be one step,
+// or two queues both decide to decode the same track.
+
+static os_unfair_lock sStateLock = OS_UNFAIR_LOCK_INIT;
 
 static NSMutableSet *sCancelledUUIDs = nil;
 
@@ -24,6 +40,44 @@ static NSMutableSet *sCancelledUUIDs = nil;
 // now, because a track scanned with the BPM column switched off has to be
 // allowed a second scan when it is switched back on.
 static NSMutableDictionary *sScannedUUIDs = nil;
+
+
+static BOOL sIsCancelled(NSUUID *UUID)
+{
+    os_unfair_lock_lock(&sStateLock);
+    BOOL result = [sCancelledUUIDs containsObject:UUID];
+    os_unfair_lock_unlock(&sStateLock);
+
+    return result;
+}
+
+
+// Whether this scan should go ahead, and -- if it should -- the record that it
+// has been claimed, in one step.
+//
+static BOOL sClaimScan(NSUUID *UUID, BOOL measuresTempo)
+{
+    os_unfair_lock_lock(&sStateLock);
+
+    BOOL result = NO;
+
+    if (![sCancelledUUIDs containsObject:UUID]) {
+        NSNumber *previous = [sScannedUUIDs objectForKey:UUID];
+
+        // Scanned before, and that scan already did everything this one is
+        // asking for.  Decoding the file again would produce the same answer,
+        // so it does not happen -- and no reply is sent, because there is
+        // nothing in it the track does not have.
+        if (!previous || (measuresTempo && ![previous boolValue])) {
+            [sScannedUUIDs setObject:@(measuresTempo || [previous boolValue]) forKey:UUID];
+            result = YES;
+        }
+    }
+
+    os_unfair_lock_unlock(&sStateLock);
+
+    return result;
+}
 
 
 @interface Worker : NSObject <WorkerProtocol>
@@ -164,7 +218,20 @@ static NSDictionary *sReadLoudness(NSURL *internalURL, BOOL measuresTempo)
 
 - (void) cancelUUID:(NSUUID *)UUID
 {
+    if (!UUID) return;
+
+    os_unfair_lock_lock(&sStateLock);
+
     [sCancelledUUIDs addObject:UUID];
+
+    // Nothing will be scanned for this track again, so what was remembered
+    // about its scans is dead weight.  Both sets are one small object per track
+    // the worker has ever been asked about and neither is ever emptied, so this
+    // is the one entry that can be dropped without risking a cancelled track
+    // being decoded again.
+    [sScannedUUIDs removeObjectForKey:UUID];
+
+    os_unfair_lock_unlock(&sStateLock);
 }
 
 
@@ -186,7 +253,7 @@ static NSDictionary *sReadLoudness(NSURL *internalURL, BOOL measuresTempo)
 
     if (command == WorkerTrackCommandReadMetadata) {
         dispatch_async(sMetadataQueue, ^{ @autoreleasepool {
-            if (![sCancelledUUIDs containsObject:UUID]) {
+            if (!sIsCancelled(UUID)) {
                 reply(sReadMetadata(internalURL, originalFilename));
             }
         } });
@@ -196,17 +263,7 @@ static NSDictionary *sReadLoudness(NSURL *internalURL, BOOL measuresTempo)
         dispatch_queue_t queue       = isImmediate ? sLoudnessImmediateQueue : sLoudnessBackgroundQueue;
 
         dispatch_async(queue, ^{ @autoreleasepool {
-            if ([sCancelledUUIDs containsObject:UUID]) return;
-
-            NSNumber *previous = [sScannedUUIDs objectForKey:UUID];
-
-            // Scanned before, and that scan already did everything this one is
-            // asking for.  Decoding the file again would produce the same
-            // answer, so it does not happen -- and, as before, no reply is
-            // sent, because there is nothing in it the track does not have.
-            if (previous && (!measuresTempo || [previous boolValue])) return;
-
-            [sScannedUUIDs setObject:@(measuresTempo || [previous boolValue]) forKey:UUID];
+            if (!sClaimScan(UUID, measuresTempo)) return;
 
             NSDictionary *dictionary = sReadLoudness(internalURL, measuresTempo);
 
