@@ -100,6 +100,55 @@ static NSDateFormatter *sGetTimeFormatter(void)
     return sTimeFormatter;
 }
 
+#pragma mark - Observed Keys
+
+// Everything about a track that changes what a row looks like.  The list is
+// fixed, and -setObjectValue: runs on every scroll and every selection change,
+// so it is built once rather than rebuilt per cell per reuse.
+//
+// It had @"pausesAfterPlaying" in it, which is not a key Track has -- the
+// property is stopsAfterPlaying.  KVO does not complain about a key path that
+// does not exist, it simply never notifies, so the row's stripe was not
+// repainting when that flag changed.
+//
+// Turning the flag *on* hid it: -setStopsAfterPlaying: calls
+// -setIgnoresAutoGap:NO on the way, and that key is observed correctly, so the
+// row redrew for the wrong reason.  Turning it off calls nothing, which is why
+// the symptom was a stop-after-playing stripe that stayed on screen after the
+// setting had been switched off.
+//
+// @"artist" was also in the list twice, so every artist change ran -_updateView
+// twice.
+//
+static NSArray<NSString *> *sObservedKeyPaths(void)
+{
+    static NSArray<NSString *> *sKeyPaths = nil;
+    static dispatch_once_t onceToken;
+
+    dispatch_once(&onceToken, ^{
+        sKeyPaths = @[
+            @"title",
+            @"artist",
+            @"playDuration",
+            @"error",
+            @"estimatedEndTime",
+            @"stopsAfterPlaying",
+            @"ignoresAutoGap",
+            @"tonality",
+            @"comments",
+            @"grouping",
+            @"beatsPerMinute",
+            @"detectedBeatsPerMinute",
+            @"trackStatus",
+            @"trackLabel",
+            @"duplicate"
+        ];
+    });
+
+    return sKeyPaths;
+}
+
+
 static NSString *sLocalizedDecimalString(NSInteger value)
 {
     sObserveFormatterInvalidation();
@@ -397,25 +446,8 @@ static NSString *sLocalizedDecimalString(NSInteger value)
     // this is a different one.
     _detectedBPMRange = NSMakeRange(NSNotFound, 0);
     
-    _observedKeyPaths = @[
-        @"title",
-        @"artist",
-        @"playDuration",
-        @"error",
-        @"estimatedEndTime",
-        @"pausesAfterPlaying",
-        @"ignoresAutoGap",
-        @"artist",
-        @"tonality",
-        @"comments",
-        @"grouping",
-        @"beatsPerMinute",
-        @"detectedBeatsPerMinute",
-        @"trackStatus",
-        @"trackLabel",
-        @"duplicate"
-    ];
-    
+    _observedKeyPaths = sObservedKeyPaths();
+
     _observedObject = objectValue;
 
     for (NSString *keyPath in _observedKeyPaths) {
