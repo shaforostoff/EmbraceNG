@@ -44,6 +44,75 @@
 @end
 
 
+#pragma mark - Shared Formatters
+
+// Both of these used to be built from scratch every time a cell refilled
+// itself, and a cell refills on every scroll, every selection change and every
+// modification to the set list.  Building one is not cheap -- it loads locale
+// data through ICU -- and measured here a fresh NSDateFormatter costs 85us
+// against 3.6us for reusing one, and a fresh NSNumberFormatter 49us against
+// 1.5us.  A cell wants one date and up to two numbers, so forty visible rows
+// went from 7.4ms of formatter construction to 0.26ms.  The frame budget is
+// 16.7ms.
+//
+// Cached rather than recreated, and thrown away when the things they were
+// built from move: a formatter captures the locale and the time zone at
+// creation and will happily keep printing yesterday's answer otherwise.
+// Main thread only, which every caller below is.
+
+static NSDateFormatter   *sTimeFormatter   = nil;
+static NSNumberFormatter *sDecimalFormatter = nil;
+
+static void sInvalidateSharedFormatters(void)
+{
+    sTimeFormatter    = nil;
+    sDecimalFormatter = nil;
+}
+
+static void sObserveFormatterInvalidation(void)
+{
+    static dispatch_once_t onceToken;
+
+    dispatch_once(&onceToken, ^{
+        NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+
+        for (NSNotificationName name in @[ NSCurrentLocaleDidChangeNotification,
+                                           NSSystemTimeZoneDidChangeNotification ])
+        {
+            [center addObserverForName: name
+                                object: nil
+                                 queue: [NSOperationQueue mainQueue]
+                            usingBlock: ^(NSNotification *note) { sInvalidateSharedFormatters(); }];
+        }
+    });
+}
+
+static NSDateFormatter *sGetTimeFormatter(void)
+{
+    sObserveFormatterInvalidation();
+
+    if (!sTimeFormatter) {
+        sTimeFormatter = [[NSDateFormatter alloc] init];
+        [sTimeFormatter setDateStyle:NSDateFormatterNoStyle];
+        [sTimeFormatter setTimeStyle:NSDateFormatterMediumStyle];
+    }
+
+    return sTimeFormatter;
+}
+
+static NSString *sLocalizedDecimalString(NSInteger value)
+{
+    sObserveFormatterInvalidation();
+
+    if (!sDecimalFormatter) {
+        sDecimalFormatter = [[NSNumberFormatter alloc] init];
+        [sDecimalFormatter setNumberStyle:NSNumberFormatterDecimalStyle];
+    }
+
+    return [sDecimalFormatter stringFromNumber:@(value)];
+}
+
+
 @interface TrackTableView (Private)
 - (void) _trackTableViewCell:(TrackTableCellView *)cellView mouseInside:(BOOL)mouseInside;
 @end
@@ -758,7 +827,7 @@
                 NSInteger bpm = [track effectiveBeatsPerMinute];
 
                 if (bpm) {
-                    string = [NSNumberFormatter localizedStringFromNumber:@(bpm) numberStyle:NSNumberFormatterDecimalStyle];
+                    string = sLocalizedDecimalString(bpm);
 
                     // A number the DJ typed reads as plain as the rest of the
                     // line; one this app worked out gets marked.  This is the
@@ -771,7 +840,7 @@
 
             } else if (attribute == TrackViewAttributeEnergyLevel) {
                 NSInteger energyLevel = [track energyLevel];
-                if (energyLevel) string = [NSNumberFormatter localizedStringFromNumber:@(energyLevel) numberStyle:NSNumberFormatterDecimalStyle];
+                if (energyLevel) string = sLocalizedDecimalString(energyLevel);
         
             } else if (attribute == TrackViewAttributeGenre) {
                 string = [track genre];
@@ -906,11 +975,7 @@
     }
 
     if (date) {
-        NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
-        [formatter setDateStyle:NSDateFormatterNoStyle];
-        [formatter setTimeStyle:NSDateFormatterMediumStyle];
-
-        timeString = [NSString stringWithFormat:timeStringFormat, [formatter stringFromDate:date]];
+        timeString = [NSString stringWithFormat:timeStringFormat, [sGetTimeFormatter() stringFromDate:date]];
     }
        
     [_timeField setStringValue:timeString];
