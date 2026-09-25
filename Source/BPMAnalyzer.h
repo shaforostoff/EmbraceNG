@@ -1,7 +1,7 @@
 // (c) 2026 Nick Shaforostov
 // MIT License (or) 1-clause BSD License
 
-// Tempo and rhythm for one track, measured from the audio.
+// Tempo, rhythm and key for one track, measured from the audio.
 //
 // A shell around `Vendor/bpmcore`, which is the analysis proper and is shared
 // verbatim with foo_rubato -- see Vendor/PROVENANCE.md.  Everything here is
@@ -77,6 +77,23 @@ extern NSString *BPMAnalyzerGetRhythm(BPMAnalyzer *analyzer);
 
 // The classifier's probability for that rhythm, 0..1.
 extern double BPMAnalyzerGetConfidence(BPMAnalyzer *analyzer);
+
+// The key, spelt the way bpmcore spells it -- "Gm", "Bb", "F#m" -- which is
+// one of the traditional names GetTonalityForString already reads.  Flat keys
+// get flat names, because tango lives in Bb, Eb and Gm and a column reading
+// A#, D# and Gm would be the wrong spelling rather than a different one.
+//
+// The empty string, not nil, when there was no key to find: too short, no
+// pitch in it, or a scan that never ran.  Empty rather than nil for the same
+// reason the rhythm has an Unknown -- the worker writes whatever comes back
+// here, and a key that is present but empty is how the app tells "measured,
+// nothing there" from "never measured" and does not decode the track again.
+//
+// Measured apart from the tempo, so a track whose tempo could not be measured
+// can still come back with a key, and the other way round.  Upstream reports
+// the right key first 60% of the time, which is the reason a measured key is
+// marked in the track list rather than shown as though it were a tag.
+extern NSString *BPMAnalyzerGetKey(BPMAnalyzer *analyzer);
 
 // Seconds of audio the analysis actually saw, which is the whole track unless
 // the length cap stopped it.

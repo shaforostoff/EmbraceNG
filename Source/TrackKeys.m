@@ -34,7 +34,7 @@ NSString * const TrackKeyYear             = @"year";
 NSString * const TrackKeyRecordedDate     = @"recordedDate";
 
 // What the audio measured, as opposed to what the file claims.  Kept apart from
-// TrackKeyBPM and TrackKeyGenre rather than filled in over them, so that a tag
+// TrackKeyBPM, TrackKeyGenre and TrackKeyInitialKey rather than filled in over them, so that a tag
 // added or corrected later wins without anything having to be re-analysed, and
 // so a state file says plainly which number came from where.
 //
@@ -42,8 +42,12 @@ NSString * const TrackKeyRecordedDate     = @"recordedDate";
 // and is written even when nothing could be measured, as
 // BPMAnalyzerRhythmUnknown.  That is what stops a track too short or too quiet
 // to analyse from being re-analysed on every launch forever.
+//
+// TrackKeyDetectedKey is the same arrangement for the key: a traditional name
+// such as "Gm", or the empty string where there was no key to find.
 NSString * const TrackKeyDetectedBPM      = @"detectedBeatsPerMinute";
 NSString * const TrackKeyDetectedRhythm   = @"detectedRhythm";
+NSString * const TrackKeyDetectedKey      = @"detectedKey";
 
 // This is the duration as reported by -[AVURLAsset duration]
 NSString * const TrackKeyDuration = @"duration";

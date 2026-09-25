@@ -129,10 +129,11 @@ static NSDictionary *sReadLoudness(NSURL *internalURL, BOOL measuresTempo)
 
         LoudnessMeasurer *measurer = LoudnessMeasurerCreate(format.mChannelsPerFrame, format.mSampleRate, framesRemaining);
 
-        // The tempo and the rhythm come out of the same pass.  Reading a track
-        // is by far the expensive part of this -- the analysis itself runs at
-        // hundreds of times realtime -- so the one thing worth insisting on is
-        // that the file is not decoded twice to answer two questions about it.
+        // The tempo, the rhythm and the key come out of the same pass.  Reading
+        // a track is by far the expensive part of this -- the analysis itself
+        // runs at hundreds of times realtime -- so the one thing worth insisting
+        // on is that the file is not decoded twice to answer two questions
+        // about it.
         // NULL when nothing will read the answer.  Every BPMAnalyzer entry
         // point is inert on a null analyzer -- the suite pins that, because it
         // is also what the worker holds if a create ever fails -- so the loop
@@ -186,19 +187,21 @@ static NSDictionary *sReadLoudness(NSURL *internalURL, BOOL measuresTempo)
         [result setObject:@(LoudnessMeasurerGetLoudness(measurer)) forKey:TrackKeyTrackLoudness];
         [result setObject:@(LoudnessMeasurerGetPeak(measurer))     forKey:TrackKeyTrackPeak];
 
-        // Both go back whatever the answer was.  The rhythm is written even
-        // when nothing could be measured, because an absent rhythm is what the
-        // app reads as "never analysed" and re-requests; a track that cannot be
-        // measured would otherwise be decoded again on every launch.
+        // All three go back whatever the answer was.  The rhythm is written
+        // even when nothing could be measured, because an absent rhythm is what
+        // the app reads as "never analysed" and re-requests; a track that
+        // cannot be measured would otherwise be decoded again on every launch.
+        // The key is written as the empty string for the same reason.
         //
         // Which is exactly why a scan that was asked not to measure writes
-        // neither key.  Reporting Unknown there would be a lie of the most
+        // none of them.  Reporting Unknown there would be a lie of the most
         // durable kind: the app cannot tell it from a measurement that failed,
         // so the track would be marked answered and never looked at again --
         // and turning the BPM column back on would not bring it back.
         if (measuresTempo) {
             [result setObject:@(BPMAnalyzerGetBeatsPerMinute(analyzer)) forKey:TrackKeyDetectedBPM];
             [result setObject:BPMAnalyzerGetRhythm(analyzer)            forKey:TrackKeyDetectedRhythm];
+            [result setObject:BPMAnalyzerGetKey(analyzer)               forKey:TrackKeyDetectedKey];
         }
 
         HugAudioBufferListFree(fillBufferList, YES);

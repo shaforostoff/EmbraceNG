@@ -23,7 +23,7 @@ Improved behaviour when external soundcard is suddenly disconnected during playb
 
 Keyboard control has been improved, automatic fade out when Stop is pressed (press the button one more time if it was accidental; set fadeout time to 0 in settings to get the old behaviour).
 
-## Tempo and rhythm
+## Tempo, rhythm and key
 
 A track with no BPM tag gets one measured from the audio. It happens during the
 loudness scan the app already runs over every track when it joins the set list,
@@ -65,6 +65,28 @@ the tracks that were passed over, and costs nothing for the ones that were
 measured for their rhythm in the meantime: both answers come out of the one
 decode, so the tempo was kept even while nothing was showing it.
 
+### Key
+
+The same decode measures the key. A track with no Initial Key tag gets one
+from the audio while View > Track Attributes > Initial Key is showing, and it
+is handled exactly as a measured tempo is: kept beside the tag, never written
+over it, shown where there is no tag, and drawn in the same blue. It goes through the
+chosen key display mode like any other, so Traditional and Open Key Notation
+both work on it. Keys are spelt the way tango is written -- Bb, Eb, Gm, not A#,
+D#, Gm.
+
+The blue matters more here than for the tempo. Measured upstream, the key comes
+back right first time about 60% of the time, and is among the top three
+candidates 93% of the time; the usual miss is a neighbour on the circle of
+fifths or the relative major or minor. Treat it as a hint.
+
+Unlike the rhythm, nothing else in the app reads a measured key, so with the key
+column hidden no track is measured for one. A track measured while it was
+hidden, for its tempo or rhythm, has its key already -- the analysis always
+measures all three -- so switching the column on costs nothing for it.
+
+### Where it comes from
+
 The analysis is `bpmcore`, from
 [foo_rubato](https://github.com/shaforostoff/foo_rubato) and vendored verbatim
 under `Vendor/` -- see `Vendor/PROVENANCE.md`. It reports the tempo at the level
@@ -72,8 +94,8 @@ a dancer taps, which is the beat for a tango and the bar for a vals or a
 milonga, and it settles the rhythm first because that is what decides the level.
 Measured upstream against 3,692 hand-tapped tracks it lands within 2 BPM of the
 tap 88.7% of the time, and classifies the rhythm correctly 93.6% of the time.
-Three minutes of stereo costs about 0.2 seconds, against a decode that takes far
-longer.
+Three minutes of stereo costs about 0.3 seconds with the key included, against
+a decode that takes far longer.
 
 What it does cost is memory, because the audio has to be buffered rather than
 streamed: the onset envelope is normalised by the track's overall level, which

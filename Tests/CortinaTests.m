@@ -23,6 +23,7 @@
 #import "Effect.h"
 #import "EffectType.h"
 #import "RecentPresets.h"
+#import "Utils.h"
 
 // The app's, not linked here.
 void EmbraceLog(NSString *category, NSString *format, ...) { }
@@ -260,6 +261,52 @@ static void testWhetherToMeasure(void)
     ckTrue("a genre that is not a string is no tag",
            GetWantsTempoMeasurement(NO, nil, 120, (id)@42));
     ckTrue("a zero BPM is no tag", GetWantsTempoMeasurement(YES, nil, 0, @"Tango"));
+}
+
+
+static void testWhetherToMeasureTheKey(void)
+{
+    printf("\n-- whether to measure the key --\n");
+
+    // The whole table: the key column's preference against a key tag.
+    ckTrue("column on, no key tag",        GetWantsKeyMeasurement(YES, nil, nil));
+    ckTrue("column on, key tagged",       !GetWantsKeyMeasurement(YES, nil, @"Gm"));
+    ckTrue("column off, no key tag",      !GetWantsKeyMeasurement(NO,  nil, nil));
+    ckTrue("column off, key tagged",      !GetWantsKeyMeasurement(NO,  nil, @"Gm"));
+
+    // Measured already.  The empty string is the worker's "found no key", and
+    // it has to count as answered for the same reason "Unknown" does for the
+    // rhythm: otherwise a track with no pitch in it is decoded every launch.
+    ckTrue("measured already",            !GetWantsKeyMeasurement(YES, @"Gm", nil));
+    ckTrue("measured, and found nothing", !GetWantsKeyMeasurement(YES, @"", nil));
+    ckTrue("something that is not a string is not a measurement",
+           GetWantsKeyMeasurement(YES, (id)@42, nil));
+
+    // The edges of "is there a tag at all".
+    ckTrue("an empty key tag is no tag",  GetWantsKeyMeasurement(YES, nil, @""));
+    ckTrue("a key tag that is not a string is no tag",
+           GetWantsKeyMeasurement(YES, nil, (id)@42));
+
+    // Every name bpmcore's key_name() can return.  One this could not parse
+    // would still show in the Raw display mode and vanish from the other two.
+    NSArray *names = @[
+        @"C",  @"Db",  @"D",  @"Eb",  @"E",  @"F",  @"F#",  @"G",  @"Ab",  @"A",  @"Bb",  @"B",
+        @"Cm", @"C#m", @"Dm", @"Ebm", @"Em", @"Fm", @"F#m", @"Gm", @"G#m", @"Am", @"Bbm", @"Bm"
+    ];
+
+    NSMutableSet *tonalities = [NSMutableSet set];
+
+    for (NSString *name in names) {
+        Tonality tonality = GetTonalityForString(name);
+
+        if (tonality == Tonality_Unknown) printf("  cannot parse %s\n", [name UTF8String]);
+        [tonalities addObject:@(tonality)];
+    }
+
+    ckTrue("every key bpmcore spells parses, each to a different tonality",
+           [tonalities count] == 24 && ![tonalities containsObject:@(Tonality_Unknown)]);
+    ckTrue("Gm is G minor", GetTonalityForString(@"Gm") == Tonality_Minor_11___6A__G);
+    ckTrue("Bb is B-flat major", GetTonalityForString(@"Bb") == Tonality_Major_11___6B__Bb);
 }
 
 
@@ -511,6 +558,7 @@ int main(void)
         testDetectedNames();
         testTheRule();
         testWhetherToMeasure();
+        testWhetherToMeasureTheKey();
 
         EffectType *lowpassType  = sTypeNamed(@"AULowpass");
         EffectType *dynamicsType = sTypeNamed(@"AUDynamicsProcessor");

@@ -111,6 +111,12 @@ void BPMAnalyzerFinish(BPMAnalyzer *analyzer)
     bpmcore::options options;
     options.threads = 0;
 
+    // The key rides the same decode as the tempo and adds about as much again
+    // to an analysis that is a small fraction of that decode.  Always on, so
+    // that whichever question opened the scan, both come back answered -- the
+    // app asks for the scan once and reads everything out of it.
+    options.detect_key = true;
+
     analyzer->result = analyzer->collector->finish(NULL, &options);
 
     // The buffered audio is the expensive part of this object and is of no
@@ -144,6 +150,20 @@ double BPMAnalyzerGetConfidence(BPMAnalyzer *analyzer)
 {
     if (!analyzer || !analyzer->result.ok) return 0;
     return analyzer->result.confidence;
+}
+
+
+NSString *BPMAnalyzerGetKey(BPMAnalyzer *analyzer)
+{
+    if (!analyzer || !analyzer->result.key.ok) return @"";
+
+    const bpmcore::key_candidate &best = analyzer->result.key.best;
+    if (best.root < 0) return @"";
+
+    const char *name = bpmcore::key_name(best.root, best.minor);
+    if (!name) return @"";
+
+    return [NSString stringWithUTF8String:name];
 }
 
 

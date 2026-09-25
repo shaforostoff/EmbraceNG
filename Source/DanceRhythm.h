@@ -8,8 +8,10 @@
 // specific rhythm is carried through anyway, because it is what the logs need
 // to be readable when a track is switched the wrong way round.
 //
-// The last function here is the other half of the same subject: whether the
-// audio is worth asking at all, given what the tags have already said.
+// The last two functions here are the other half of the same subject: whether
+// the audio is worth asking at all, given what the tags have already said.  The
+// key is not a rhythm, but it is the same question about the same scan, and
+// is kept beside the tempo's rule so the two are read together.
 
 #import <Foundation/Foundation.h>
 
@@ -104,6 +106,28 @@ extern BOOL GetWantsTempoMeasurement(
     NSString  *detectedRhythm,
     NSInteger  taggedBPM,
     NSString  *taggedGenre
+);
+
+// The key's half of the same question, asked on its own because it closes on
+// its own.  The scan that answers GetWantsTempoMeasurement answers this too --
+// bpmcore measures the key off the same decode -- so a track either rule opens
+// comes back with all three, and the caller asks for the scan when either
+// says yes.
+//
+// Open when the key column is showing and the file carries no key tag.
+// `displaysKey` is that column's preference, and unlike the rhythm nothing
+// else in the app reads a measured key, so with the column hidden there is no
+// reason to measure one.
+//
+// `detectedKey` closes it once it is any string at all, the empty one
+// included: the worker writes "" where it found no key, and that is "has been
+// measured" in the same sense a detected rhythm of "Unknown" is.  Kept apart
+// from `detectedRhythm` rather than inferred from it, so a state file written
+// before the key was measured still has its key asked for.
+extern BOOL GetWantsKeyMeasurement(
+    BOOL       displaysKey,
+    NSString  *detectedKey,
+    NSString  *taggedKey
 );
 
 #ifdef __cplusplus

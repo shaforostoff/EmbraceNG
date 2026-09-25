@@ -126,3 +126,19 @@ BOOL GetWantsTempoMeasurement(
 
     return wantsBPM || wantsRhythm;
 }
+
+
+BOOL GetWantsKeyMeasurement(
+    BOOL       displaysKey,
+    NSString  *detectedKey,
+    NSString  *taggedKey
+) {
+    if ([detectedKey isKindOfClass:[NSString class]]) {
+        return NO;
+    }
+
+    BOOL hasKeyTag = [taggedKey isKindOfClass:[NSString class]] &&
+                     [taggedKey length] > 0;
+
+    return displaysKey && !hasKeyTag;
+}

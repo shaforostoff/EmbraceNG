@@ -134,7 +134,7 @@ static NSArray<NSString *> *sObservedKeyPaths(void)
             @"estimatedEndTime",
             @"stopsAfterPlaying",
             @"ignoresAutoGap",
-            @"tonality",
+            @"effectiveInitialKey",
             @"comments",
             @"grouping",
             @"beatsPerMinute",
@@ -191,16 +191,17 @@ static NSString *sLocalizedDecimalString(NSInteger value)
     BOOL            _animatesTime;
     BOOL            _animatesSpeakerImage;
 
-    // Where a measured BPM sits inside the line-two-right string, and the two
-    // colors that string is currently drawn in.  -_updateFieldStrings knows the
-    // first, -updateColors knows the other two, and either can be called on its
-    // own -- a selection change recolors without rebuilding the strings, and a
-    // new BPM rebuilds the strings without changing the colors -- so each keeps
-    // what it knows where the other can find it.
-    NSRange         _detectedBPMRange;
+    // Which characters of the line-two-right string are a measured BPM or a
+    // measured key, and the two colors that string is currently drawn in.
+    // -_updateFieldStrings knows the first, -updateColors knows the other two,
+    // and either can be called on its own -- a selection change recolors
+    // without rebuilding the strings, and a new BPM rebuilds the strings
+    // without changing the colors -- so each keeps what it knows where the
+    // other can find it.
+    NSIndexSet     *_measuredCharacters;
     NSColor        *_secondaryTextColor;
-    NSColor        *_detectedBPMColor;
-    BOOL            _detectedBPMMarked;
+    NSColor        *_measuredColor;
+    BOOL            _measuredMarked;
 }
 
 
@@ -442,9 +443,9 @@ static NSString *sLocalizedDecimalString(NSInteger value)
 
     [super setObjectValue:objectValue];
 
-    // The range belongs to whichever track the cell was last filled for, and
+    // The marks belong to whichever track the cell was last filled for, and
     // this is a different one.
-    _detectedBPMRange = NSMakeRange(NSNotFound, 0);
+    _measuredCharacters = nil;
     
     _observedKeyPaths = sObservedKeyPaths();
 
@@ -695,34 +696,34 @@ static NSString *sLocalizedDecimalString(NSInteger value)
     NSColor *primaryColor   = nil;
     NSColor *secondaryColor = nil;
 
-    // nil where a measured BPM is to be left the same color as everything
-    // around it.  The mark is a hue against a row drawn in plain black or
-    // white; a row that is already drawn in a color of its own has no plain
-    // to stand out from, and would only end up with two colors fighting.
-    NSColor *detectedBPMColor = nil;
+    // nil where a measured BPM or key is to be left the same color as
+    // everything around it.  The mark is a hue against a row drawn in plain
+    // black or white; a row that is already drawn in a color of its own has no
+    // plain to stand out from, and would only end up with two colors fighting.
+    NSColor *measuredColor = nil;
 
     TrackStatus trackStatus = [[self track] trackStatus];
 
     if (trackStatus == TrackStatusPlayed) {
         primaryColor     = [NSColor colorNamed:@"SetlistPrimaryPlayed"];
         secondaryColor   = [NSColor colorNamed:@"SetlistSecondaryPlayed"];
-        detectedBPMColor = [NSColor colorNamed:@"SetlistDetectedBPMPlayed"];
+        measuredColor    = [NSColor colorNamed:@"SetlistDetectedBPMPlayed"];
     
     } else {
         primaryColor     = [NSColor colorNamed:@"SetlistPrimary"];
         secondaryColor   = [NSColor colorNamed:@"SetlistSecondary"];
-        detectedBPMColor = [NSColor colorNamed:@"SetlistDetectedBPM"];
+        measuredColor    = [NSColor colorNamed:@"SetlistDetectedBPM"];
     }
     
     if (rowIsSelected && rowIsEmphasized) {
         primaryColor     = [NSColor colorNamed:@"SetlistPrimaryEmphasized"];
         secondaryColor   = [NSColor colorNamed:@"SetlistSecondaryEmphasized"];
-        detectedBPMColor = nil;
+        measuredColor    = nil;
 
     } else if ((trackStatus == TrackStatusPreparing) || (trackStatus == TrackStatusPlaying)) {
         primaryColor     = TrackTableViewGetPlayingTextColor();
         secondaryColor   = primaryColor;
-        detectedBPMColor = nil;
+        measuredColor    = nil;
     }
    
     [[self titleField]    setTextColor:primaryColor];
@@ -735,8 +736,8 @@ static NSString *sLocalizedDecimalString(NSInteger value)
     [_timeField                 setTextColor:secondaryColor];
 
     _secondaryTextColor = secondaryColor;
-    _detectedBPMColor   = detectedBPMColor;
-    [self _updateDetectedBPMMark];
+    _measuredColor      = measuredColor;
+    [self _updateMeasuredMarks];
 
     [_duplicateImageView setTintColor:primaryColor];
     [_speakerImageView   setTintColor:primaryColor];
@@ -838,12 +839,11 @@ static NSString *sLocalizedDecimalString(NSInteger value)
         return result;
     };
 
-    // outMarkRange comes back as the range of the BPM inside the returned string
-    // when that BPM was measured rather than read off a tag, and as a zero
-    // length range otherwise.
-    NSString *(^collectAttributes)(NSArray *, NSRange *) = ^(NSArray *attributes, NSRange *outMarkRange) {
+    // outMarks comes back as the characters of the returned string that are a
+    // BPM or a key measured rather than read off a tag, and empty otherwise.
+    NSString *(^collectAttributes)(NSArray *, NSIndexSet **) = ^(NSArray *attributes, NSIndexSet **outMarks) {
         NSMutableArray *strings = [NSMutableArray array];
-        NSInteger markIndex = NSNotFound;
+        NSMutableIndexSet *markIndexes = [NSMutableIndexSet indexSet];
 
         for (NSNumber *attributeNumber in attributes) {
             TrackViewAttribute attribute = [attributeNumber integerValue];
@@ -864,7 +864,7 @@ static NSString *sLocalizedDecimalString(NSInteger value)
                     // A number the DJ typed reads as plain as the rest of the
                     // line; one this app worked out gets marked.  This is the
                     // index it is about to be added at.
-                    if ([track beatsPerMinuteWasMeasured]) markIndex = [strings count];
+                    if ([track beatsPerMinuteWasMeasured]) [markIndexes addIndex:[strings count]];
                 }
 
             } else if (attribute == TrackViewAttributeComments) {
@@ -884,13 +884,20 @@ static NSString *sLocalizedDecimalString(NSInteger value)
                 KeySignatureDisplayMode displayMode = [preferences keySignatureDisplayMode];
         
                 if (displayMode == KeySignatureDisplayModeRaw) {
-                    string = [track initialKey];
+                    string = [track effectiveInitialKey];
 
                 } else if (displayMode == KeySignatureDisplayModeTraditional) {
-                    string = GetTraditionalStringForTonality([track tonality]);
+                    string = GetTraditionalStringForTonality([track effectiveTonality]);
 
                 } else if (displayMode == KeySignatureDisplayModeOpenKeyNotation) {
-                    string = GetOpenKeyNotationStringForTonality([track tonality]);
+                    string = GetOpenKeyNotationStringForTonality([track effectiveTonality]);
+                }
+
+                // Marked for the same reason as a measured BPM, and more so:
+                // the key comes back right first time only about 60% of the
+                // time.  An empty string is not added below, so is not marked.
+                if ([string length] && [track initialKeyWasMeasured]) {
+                    [markIndexes addIndex:[strings count]];
                 }
 
             } else if (attribute == TrackViewAttributeYear) {
@@ -907,21 +914,23 @@ static NSString *sLocalizedDecimalString(NSInteger value)
         NSString *joiner = NSLocalizedString(@" \\U2013 ", nil);
         NSString *result = [strings componentsJoinedByString:joiner];
 
-        if (outMarkRange) {
-            *outMarkRange = NSMakeRange(NSNotFound, 0);
+        if (outMarks) {
+            NSMutableIndexSet *characters = [NSMutableIndexSet indexSet];
 
-            if (markIndex != NSNotFound) {
+            [markIndexes enumerateIndexesUsingBlock:^(NSUInteger markIndex, BOOL *stop) {
                 // Count the pieces in front of it rather than searching the
                 // joined string for the number: two attributes on one line can
                 // easily read the same, and the wrong one would get marked.
                 NSUInteger location = markIndex * [joiner length];
 
-                for (NSInteger i = 0; i < markIndex; i++) {
+                for (NSUInteger i = 0; i < markIndex; i++) {
                     location += [[strings objectAtIndex:i] length];
                 }
 
-                *outMarkRange = NSMakeRange(location, [[strings objectAtIndex:markIndex] length]);
-            }
+                [characters addIndexesInRange:NSMakeRange(location, [[strings objectAtIndex:markIndex] length])];
+            }];
+
+            *outMarks = characters;
         }
 
         return result;
@@ -984,15 +993,15 @@ static NSString *sLocalizedDecimalString(NSInteger value)
     }
 
   
-    NSRange detectedBPMRange = NSMakeRange(NSNotFound, 0);
+    NSIndexSet *measuredCharacters = nil;
 
     [[self lineTwoLeftField]    setStringValue:collectAttributes(a_2L, NULL)];
-    [[self lineTwoRightField]   setStringValue:collectAttributes(a_2R, &detectedBPMRange)];
+    [[self lineTwoRightField]   setStringValue:collectAttributes(a_2R, &measuredCharacters)];
     [[self lineThreeLeftField]  setStringValue:collectAttributes(a_3L, NULL)];
     [[self lineThreeRightField] setStringValue:collectAttributes(a_3R, NULL)];
 
-    _detectedBPMRange = detectedBPMRange;
-    [self _updateDetectedBPMMark];
+    _measuredCharacters = measuredCharacters;
+    [self _updateMeasuredMarks];
 
     NSString *timeString = @"";
     NSString *timeStringFormat;
@@ -1022,23 +1031,23 @@ static NSString *sLocalizedDecimalString(NSInteger value)
 }
 
 
-// Draws the line-two-right field, in the mark color where a measured BPM is on
-// it and in the plain secondary color everywhere else.  Every run carries its
+// Draws the line-two-right field, in the mark color where a measured BPM or key
+// is on it and in the plain secondary color everywhere else.  Every run carries its
 // own font and color: an attributed string is not obliged to take any notice of
 // what -setTextColor: and -setFont: say, so it is told the whole answer rather
 // than half of one.
-- (void) _updateDetectedBPMMark
+- (void) _updateMeasuredMarks
 {
     NSTextField *field = [self lineTwoRightField];
     NSString    *string = [field stringValue];
 
-    // The range belongs to whatever -_updateFieldStrings last built.  A cell
-    // reused for another track can be recolored before it is refilled, so the
-    // range is checked against the string in hand rather than trusted.
-    BOOL marks = _detectedBPMColor &&
+    // The marks belong to whatever -_updateFieldStrings last built.  A cell
+    // reused for another track can be recolored before it is refilled, so they
+    // are checked against the string in hand rather than trusted.
+    BOOL marks = _measuredColor &&
                  _secondaryTextColor &&
-                 _detectedBPMRange.length &&
-                 NSMaxRange(_detectedBPMRange) <= [string length];
+                 [_measuredCharacters count] &&
+                 [_measuredCharacters lastIndex] < [string length];
 
     if (!marks) {
         // -setStringValue: drops the attributes an earlier pass left behind,
@@ -1046,9 +1055,9 @@ static NSString *sLocalizedDecimalString(NSInteger value)
         // doing where there are attributes to drop: this runs for every visible
         // cell every time the selection moves, and most of them have no mark on
         // them to begin with.
-        if (_detectedBPMMarked) {
+        if (_measuredMarked) {
             [field setStringValue:string];
-            _detectedBPMMarked = NO;
+            _measuredMarked = NO;
         }
 
         return;
@@ -1060,10 +1069,12 @@ static NSString *sLocalizedDecimalString(NSInteger value)
     };
 
     NSMutableAttributedString *value = [[NSMutableAttributedString alloc] initWithString:string attributes:attributes];
-    [value addAttribute:NSForegroundColorAttributeName value:_detectedBPMColor range:_detectedBPMRange];
+    [_measuredCharacters enumerateRangesUsingBlock:^(NSRange range, BOOL *stop) {
+        [value addAttribute:NSForegroundColorAttributeName value:_measuredColor range:range];
+    }];
 
     [field setAttributedStringValue:value];
-    _detectedBPMMarked = YES;
+    _measuredMarked = YES;
 }
 
 

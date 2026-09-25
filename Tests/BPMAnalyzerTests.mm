@@ -180,6 +180,7 @@ static void testNothingToMeasure(void)
     BPMAnalyzerFinish(analyzer);
     ckTrue("silence reports no tempo", BPMAnalyzerGetBeatsPerMinute(analyzer) == 0);
     ckEqual("silence reports Unknown", BPMAnalyzerGetRhythm(analyzer), BPMAnalyzerRhythmUnknown);
+    ckEqual("silence reports no key, as the empty string", BPMAnalyzerGetKey(analyzer), @"");
     BPMAnalyzerFree(analyzer);
 
     // Half a second, which is less than one analysis window.
@@ -197,6 +198,7 @@ static void testNothingToMeasure(void)
     BPMAnalyzerFinish(analyzer);
     ckEqual("no audio at all reports Unknown", BPMAnalyzerGetRhythm(analyzer), BPMAnalyzerRhythmUnknown);
     ckTrue("no audio at all reports no tempo", BPMAnalyzerGetBeatsPerMinute(analyzer) == 0);
+    ckEqual("no audio at all reports no key", BPMAnalyzerGetKey(analyzer), @"");
     BPMAnalyzerFree(analyzer);
 
     // Every entry point has to survive a create that failed.
@@ -205,7 +207,63 @@ static void testNothingToMeasure(void)
     BPMAnalyzerFinish(NULL);
     ckTrue("null reports no tempo", BPMAnalyzerGetBeatsPerMinute(NULL) == 0);
     ckEqual("null reports Unknown", BPMAnalyzerGetRhythm(NULL), BPMAnalyzerRhythmUnknown);
+    ckEqual("null reports no key", BPMAnalyzerGetKey(NULL), @"");
     BPMAnalyzerFree(NULL);
+}
+
+
+#pragma mark - The key
+
+// A cadence, i - iv - V - i, over and over: the progression that says a minor
+// key most plainly, with the raised leading tone in the V that tells it from
+// its relative major.  Each chord is three tones with a few harmonics, so the
+// peaks look like notes rather than like test tones.
+static std::vector<float> sMakeCadence(double tonic, const int (*chords)[3], int chordCount,
+                                       double secondsPerChord, double seconds, double rate)
+{
+    size_t frames = (size_t)(seconds * rate);
+    size_t perChord = (size_t)(secondsPerChord * rate);
+    std::vector<float> out(frames, 0.0f);
+
+    for (size_t i = 0; i < frames; i++) {
+        size_t c = (i / perChord) % chordCount;
+        double t = (double)i / rate;
+        double sum = 0;
+
+        for (int n = 0; n < 3; n++) {
+            double f = tonic * pow(2.0, chords[c][n] / 12.0);
+            for (int h = 1; h <= 4; h++) {
+                sum += sin(2.0 * M_PI * f * h * t) / h;
+            }
+        }
+
+        out[i] = (float)(0.08 * sum);
+    }
+
+    return out;
+}
+
+
+static void testKey(void)
+{
+    printf("\n-- the key --\n");
+
+    double rate = 44100;
+
+    // G minor, in semitones above G3: Gm, Cm, D, Gm.
+    const int chords[][3] = { { 0, 3, 7 }, { 5, 8, 12 }, { 7, 11, 14 }, { 0, 3, 7 } };
+
+    std::vector<float> mono = sMakeCadence(196.0, chords, 4, 1.0, 60.0, rate);
+
+    BPMAnalyzer *analyzer = BPMAnalyzerCreate(1, rate, mono.size());
+    sFeed(analyzer, { mono }, 4096);
+    BPMAnalyzerFinish(analyzer);
+
+    // Spelt with a flat where it has one.  That these names are ones
+    // GetTonalityForString reads is checked in CortinaTests, which links the
+    // app's Utils; here it is only what comes out.
+    ckEqual("a cadence in G minor reads as Gm", BPMAnalyzerGetKey(analyzer), @"Gm");
+    BPMAnalyzerFree(analyzer);
 }
 
 
@@ -523,6 +581,8 @@ static void testTheWorkerGate(void)
     ckTrue("...with the overview it was always for", [result objectForKey:TrackKeyOverviewData] != nil);
     ckTrue("...with a tempo", [[result objectForKey:TrackKeyDetectedBPM] doubleValue] > 0);
     ckTrue("...and with a rhythm", [result objectForKey:TrackKeyDetectedRhythm] != nil);
+    ckTrue("...and with a key, even if an empty one",
+           [[result objectForKey:TrackKeyDetectedKey] isKindOfClass:[NSString class]]);
 
     // Told not to: the overview still, and neither tempo key.  Not "Unknown" --
     // the app cannot tell an Unknown that was never looked for from one that
@@ -535,6 +595,7 @@ static void testTheWorkerGate(void)
     ckTrue("...and still with the loudness", [result objectForKey:TrackKeyTrackLoudness] != nil);
     ckTrue("...but with no tempo", [result objectForKey:TrackKeyDetectedBPM] == nil);
     ckTrue("...and no rhythm, not even Unknown", [result objectForKey:TrackKeyDetectedRhythm] == nil);
+    ckTrue("...and no key, not even an empty one", [result objectForKey:TrackKeyDetectedKey] == nil);
 
     printf("\n-- and what it does when it is asked twice --\n");
 
@@ -604,6 +665,7 @@ int main(void)
 
         testDirectFeed();
         testNothingToMeasure();
+        testKey();
         testLengthHint();
         testThroughAFile();
         testTheWorkerGate();

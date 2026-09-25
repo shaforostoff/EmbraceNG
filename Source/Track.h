@@ -116,6 +116,21 @@ typedef NS_ENUM(NSInteger, TrackLabel) {
 @property (nonatomic, readonly) double    detectedBeatsPerMinute;
 @property (nonatomic, readonly) NSString *detectedRhythm;
 
+// The key the same pass measured, as a traditional name -- "Gm", "Bb", "F#m".
+// Empty where the analysis ran and found no key, and nil where it has not run,
+// which is the distinction that stops such a track being decoded again.  Like
+// -detectedBeatsPerMinute it is kept beside the tag and never merged into
+// -initialKey, and -tonality stays the tag's alone.
+@property (nonatomic, readonly) NSString *detectedKey;
+
+// The key tag where the file carried one, and the measurement where it did
+// not; nil where there is neither.  -initialKeyWasMeasured says which, so the
+// setlist can mark a key this app worked out.  -effectiveTonality is the same
+// answer parsed, which is what the Traditional and Open Key display modes read.
+@property (nonatomic, readonly) NSString *effectiveInitialKey;
+@property (nonatomic, readonly) Tonality  effectiveTonality;
+@property (nonatomic, readonly) BOOL      initialKeyWasMeasured;
+
 // The BPM tag where the file carried one, and the measurement rounded to the
 // nearest whole BPM where it did not.  -beatsPerMinuteWasMeasured says which of
 // the two -effectiveBeatsPerMinute is showing, so that the setlist can mark a

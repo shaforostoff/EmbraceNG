@@ -3,7 +3,9 @@
 # Builds and runs the checks on the cortina switch: how a track's rhythm is read
 # from a genre tag or from bpmcore's measurement, how a preset named "cortina"
 # is found among an effect type's recent ones, and what CortinaEffects does with
-# the two answers.
+# the two answers.  Also whether a track's key is worth measuring, and that the
+# key names bpmcore spells are ones the app's Utils can parse -- the same scan,
+# and a suite that already links Cocoa.
 #
 # No window server and no audio device -- it instantiates audio units but never
 # renders through them -- so this runs over a plain SSH login.  It writes preset
@@ -19,6 +21,7 @@ cd "$(dirname "$0")/.."
 SRC="Tests/CortinaTests.m \
      Source/CortinaEffects.m \
      Source/DanceRhythm.m \
+     Source/Utils.m \
      Source/RecentPresets.m \
      Source/Effect.m \
      Source/EffectType.m \
@@ -36,7 +39,17 @@ OBJECTS=""
 
 for src in $SRC; do
     obj="$DIR/$(basename "$src").o"
-    clang -c -o "$obj" "$src" -fobjc-arc -O1 -g -Wall -ISource -include Source/Prefix.pch \
+
+    # Utils.m is here for GetTonalityForString alone, and brings eight uses of
+    # UTType and NSAppearance API deprecated in macOS 12 with it.  The app
+    # builds it the same way and says nothing; a suite that reported them on
+    # every run would be how a real warning goes unread.
+    EXTRA=""
+    if [ "$src" = "Source/Utils.m" ]; then
+        EXTRA="-Wno-deprecated-declarations"
+    fi
+
+    clang -c -o "$obj" "$src" -fobjc-arc -O1 -g -Wall -ISource -include Source/Prefix.pch $EXTRA \
         || { echo "build failed"; exit 1; }
     OBJECTS="$OBJECTS $obj"
 done

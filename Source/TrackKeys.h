@@ -24,6 +24,7 @@ extern NSString * const TrackKeyOverviewRate;
 extern NSString * const TrackKeyBPM;
 extern NSString * const TrackKeyDetectedBPM;
 extern NSString * const TrackKeyDetectedRhythm;
+extern NSString * const TrackKeyDetectedKey;
 extern NSString * const TrackKeyDatabaseID;
 extern NSString * const TrackKeyGrouping;
 extern NSString * const TrackKeyComments;

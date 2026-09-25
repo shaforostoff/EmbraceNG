@@ -20,7 +20,7 @@ NSString * const TrackDidModifyDurationNotificationName    = @"TrackDidModifyDur
 
 #define DUMP_UNKNOWN_TAGS 0
 
-// Whether a measured tempo and rhythm survive a relaunch.
+// Whether a measured tempo, rhythm and key survive a relaunch.
 //
 // Off, which means every track is analysed once per launch rather than once
 // ever.  The measurement rides a decode the worker performs anyway, so what
@@ -59,6 +59,7 @@ static NSString * const sPlayedTimeKey        = @"playedTime";
 @property (nonatomic) NSInteger beatsPerMinute;
 @property (nonatomic) double detectedBeatsPerMinute;
 @property (nonatomic) NSString *detectedRhythm;
+@property (nonatomic) NSString *detectedKey;
 @property (nonatomic) NSTimeInterval startTime;
 @property (nonatomic) NSTimeInterval stopTime;
 @property (nonatomic) NSTimeInterval duration;
@@ -101,6 +102,7 @@ static NSString * const sPlayedTimeKey        = @"playedTime";
 
 @dynamic playDuration, silenceAtStart, silenceAtEnd, tonality;
 @dynamic effectiveBeatsPerMinute, beatsPerMinuteWasMeasured, danceRhythm;
+@dynamic effectiveInitialKey, effectiveTonality, initialKeyWasMeasured;
 
 
 // Both of these are asked for once per track -- on the way in at launch, and
@@ -205,6 +207,10 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
         affectingKeys = @[ @"overviewData", @"stopTime" ];
     } else if ([key isEqualToString:@"tonality"]) {
         affectingKeys = @[ @"initialKey" ];
+    } else if ([key isEqualToString:@"effectiveInitialKey"] ||
+               [key isEqualToString:@"effectiveTonality"] ||
+               [key isEqualToString:@"initialKeyWasMeasured"]) {
+        affectingKeys = @[ @"initialKey", @"detectedKey" ];
     }
 
     if (affectingKeys) {
@@ -246,11 +252,15 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
     // until some other change happened to rewrite the file.  Dropping them here
     // makes off mean off whatever is on disk.
     //
-    if ([state objectForKey:TrackKeyDetectedRhythm] || [state objectForKey:TrackKeyDetectedBPM]) {
+    if ([state objectForKey:TrackKeyDetectedRhythm] ||
+        [state objectForKey:TrackKeyDetectedBPM]    ||
+        [state objectForKey:TrackKeyDetectedKey])
+    {
         NSMutableDictionary *withoutMeasurement = [state mutableCopy];
 
         [withoutMeasurement removeObjectForKey:TrackKeyDetectedRhythm];
         [withoutMeasurement removeObjectForKey:TrackKeyDetectedBPM];
+        [withoutMeasurement removeObjectForKey:TrackKeyDetectedKey];
 
         state = withoutMeasurement;
     }
@@ -484,6 +494,7 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
     if (_detectedRhythm)   [state setObject:_detectedRhythm       forKey:TrackKeyDetectedRhythm];
     if (_detectedBeatsPerMinute)
                            [state setObject:@(_detectedBeatsPerMinute) forKey:TrackKeyDetectedBPM];
+    if (_detectedKey)      [state setObject:_detectedKey          forKey:TrackKeyDetectedKey];
 #endif
     if (_duration)         [state setObject:@(_duration)          forKey:TrackKeyDuration];
     if (_energyLevel)      [state setObject:@(_energyLevel)       forKey:TrackKeyEnergyLevel];
@@ -908,7 +919,7 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
             // the two queues.  It does not wait for the tags either: if they
             // are not in yet, the track is measured as though it had none,
             // which is the right way round to be wrong.
-            BOOL measuresTempo = [self _wantsTempoMeasurement];
+            BOOL measuresTempo = [self _wantsMeasurement];
 
             _analysisRequested     = YES;
             _analysisMeasuresTempo = _analysisMeasuresTempo || measuresTempo;
@@ -920,16 +931,28 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
 }
 
 
-// The rule is GetWantsTempoMeasurement, in DanceRhythm.m, which is where it can
-// be tested; this reads the four facts out of the track and the preferences.
-- (BOOL) _wantsTempoMeasurement
+// The rules are GetWantsTempoMeasurement and GetWantsKeyMeasurement, in
+// DanceRhythm.m, which is where they can be tested; this reads the facts out
+// of the track and the preferences.  One scan answers both, so either one
+// wanting it is enough.
+- (BOOL) _wantsMeasurement
 {
-    return GetWantsTempoMeasurement(
-        [[Preferences sharedInstance] showsBPM],
+    Preferences *preferences = [Preferences sharedInstance];
+
+    BOOL wantsTempo = GetWantsTempoMeasurement(
+        [preferences showsBPM],
         _detectedRhythm,
         _beatsPerMinute,
         [self genre]
     );
+
+    BOOL wantsKey = GetWantsKeyMeasurement(
+        [preferences showsKeySignature],
+        _detectedKey,
+        [self initialKey]
+    );
+
+    return wantsTempo || wantsKey;
 }
 
 
@@ -941,21 +964,22 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
 
     // The overview is not optional the way the measurement is: the player
     // refuses to start a track without one, so a missing overview is asked for
-    // whatever the BPM column is set to.  A track carrying an overview but no
-    // rhythm was scanned by a build, or a launch, that did not measure one.
+    // whatever the BPM and key columns are set to.  A track carrying an
+    // overview but no rhythm or no key was scanned by a build, or a launch,
+    // that did not measure one.
     BOOL needsOverview = !_overviewData;
-    BOOL wantsTempo    = [self _wantsTempoMeasurement];
+    BOOL wantsMeasure  = [self _wantsMeasurement];
 
-    if (!needsOverview && !wantsTempo) {
+    if (!needsOverview && !wantsMeasure) {
         return;
     }
 
-    if (_analysisRequested && (!wantsTempo || _analysisMeasuresTempo)) {
+    if (_analysisRequested && (!wantsMeasure || _analysisMeasuresTempo)) {
         return;
     }
 
     _analysisRequested     = YES;
-    _analysisMeasuresTempo = _analysisMeasuresTempo || wantsTempo;
+    _analysisMeasuresTempo = _analysisMeasuresTempo || wantsMeasure;
 
     [self _requestWorkerCommand: (_priorityAnalysisRequested ?
                                     WorkerTrackCommandReadLoudnessImmediate :
@@ -966,9 +990,9 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
 
 - (void) _handlePreferencesDidChange:(NSNotification *)note
 {
-    // Switching the BPM column back on is what this is for: every track that
-    // was passed over while it was off becomes one that wants measuring, and
-    // there is nothing else that would ask again.  The notification does not
+    // Switching the BPM or key column back on is what this is for: every track
+    // that was passed over while it was off becomes one that wants measuring,
+    // and there is nothing else that would ask again.  The notification does not
     // say which preference moved, so this runs on all of them -- it is a few
     // property reads and returns without asking the worker anything in every
     // case but the one it is here for.
@@ -1189,6 +1213,27 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
 - (DanceRhythm) danceRhythm
 {
     return GetDanceRhythm([self genre], _detectedRhythm);
+}
+
+
+- (NSString *) effectiveInitialKey
+{
+    if ([_initialKey length]) return _initialKey;
+    if ([_detectedKey length]) return _detectedKey;
+
+    return nil;
+}
+
+
+- (Tonality) effectiveTonality
+{
+    return GetTonalityForString([self effectiveInitialKey]);
+}
+
+
+- (BOOL) initialKeyWasMeasured
+{
+    return ![_initialKey length] && [_detectedKey length];
 }
 
 
