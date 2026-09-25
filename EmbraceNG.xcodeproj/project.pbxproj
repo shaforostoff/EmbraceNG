@@ -89,6 +89,7 @@
 		DEC1DE0000000000000000A4 /* resample.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000068 /* resample.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
 		DEC1DE0000000000000000A5 /* rhythm.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000069 /* rhythm.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
 		DEC1DE0000000000000000A6 /* tempo.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE00000000000000006A /* tempo.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
+		DEC1DE0000000000000000AF /* key.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE00000000000000006B /* key.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
 		DEC1DE0000000000000000A7 /* pffft.c in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000071 /* pffft.c */; settings = {COMPILER_FLAGS = "-O2 -Wno-missing-prototypes -Wno-shadow"; }; };
 		DEC1DE000000000000000011 /* declick_core.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000002 /* declick_core.cpp */; settings = {COMPILER_FLAGS = "-O2"; }; };
 		DEC1DE000000000000000014 /* ParameterFormView.m in Sources */ = {isa = PBXBuildFile; fileRef = DEC1DE000000000000000008 /* ParameterFormView.m */; };
@@ -351,6 +352,7 @@
 		DEC1DE000000000000000068 /* resample.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = resample.cpp; path = Vendor/bpmcore/resample.cpp; sourceTree = "<group>"; };
 		DEC1DE000000000000000069 /* rhythm.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = rhythm.cpp; path = Vendor/bpmcore/rhythm.cpp; sourceTree = "<group>"; };
 		DEC1DE00000000000000006A /* tempo.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = tempo.cpp; path = Vendor/bpmcore/tempo.cpp; sourceTree = "<group>"; };
+		DEC1DE00000000000000006B /* key.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = key.cpp; path = Vendor/bpmcore/key.cpp; sourceTree = "<group>"; };
 		DEC1DE000000000000000070 /* pffft.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = pffft.h; path = Vendor/pffft/pffft.h; sourceTree = "<group>"; };
 		DEC1DE000000000000000071 /* pffft.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = pffft.c; path = Vendor/pffft/pffft.c; sourceTree = "<group>"; };
 		DEC1DE000000000000000072 /* COPYING */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = COPYING; path = Vendor/pffft/COPYING; sourceTree = "<group>"; };
@@ -690,6 +692,7 @@
 				DEC1DE000000000000000068 /* resample.cpp */,
 				DEC1DE000000000000000069 /* rhythm.cpp */,
 				DEC1DE00000000000000006A /* tempo.cpp */,
+				DEC1DE00000000000000006B /* key.cpp */,
 			);
 			name = bpmcore;
 			sourceTree = "<group>";
@@ -1297,6 +1300,7 @@
 				DEC1DE0000000000000000A4 /* resample.cpp in Sources */,
 				DEC1DE0000000000000000A5 /* rhythm.cpp in Sources */,
 				DEC1DE0000000000000000A6 /* tempo.cpp in Sources */,
+				DEC1DE0000000000000000AF /* key.cpp in Sources */,
 				DEC1DE0000000000000000A7 /* pffft.c in Sources */,
 				553E77921E6ABF4E00DA988B /* MetadataParser.m in Sources */,
 				555953F721BA0C300032EE54 /* HugUtils.m in Sources */,

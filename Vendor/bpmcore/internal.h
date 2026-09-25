@@ -108,6 +108,57 @@ private:
 bool compute_odf(const float * mono, std::size_t count, unsigned sample_rate,
                  odf & out, listener * l, int threads = 0);
 
+//! Reports one stage's progress as a sub-range of the whole job's.
+//!
+//! Two stages now share a caller's listener, and neither should have to know
+//! the other exists or what share of the time it takes.
+class progress_range : public listener
+{
+public:
+	progress_range(listener * inner, double from, double to)
+		: m_inner(inner), m_from(from), m_span(to - from) {}
+
+	bool cancelled() override { return m_inner != nullptr && m_inner->cancelled(); }
+	void progress(double fraction) override
+	{
+		if (m_inner != nullptr) m_inner->progress(m_from + fraction * m_span);
+	}
+
+private:
+	listener * m_inner;
+	double m_from, m_span;
+};
+
+//! Geometry of the pitch analysis, in seconds, as odf's is. A 372ms window at
+//! a 93ms hop - long enough to resolve a semitone at the bottom of the search
+//! band, where two adjacent notes are 10Hz apart.
+extern const double key_window_seconds;
+extern const double key_hop_seconds;
+extern const double key_fmin_hz;
+extern const double key_fmax_hz;
+//! Half the width of the background window, in semitones rather than in Hz:
+//! a fixed Hz width is 33 semitones at the bottom of the band and 2 at the top.
+extern const double key_whiten_half_semitones;
+//! Confidence bands for the correlation margin, and the point past which the
+//! tuning offset is too near the semitone wrap to trust the key.
+extern const double key_margin_high;
+extern const double key_margin_medium;
+extern const double key_tuning_min_r;
+extern const double key_wrap_warn_cents;
+//! Largest correction `suggest_retune` will offer, in cents.
+extern const double key_retune_max_cents;
+//! Albrecht and Shanahan (2013), rooted on C.
+extern const double key_profile_major[12];
+extern const double key_profile_minor[12];
+
+//! Tuning offset and key, from their own spectral pass over the same audio.
+//!
+//! Independent of the tempo analysis in every way but the decode they share.
+//! `threads` behaves as it does for compute_odf, and the result does not
+//! depend on it.
+bool compute_key(const float * mono, std::size_t count, unsigned sample_rate,
+                 key_analysis & out, listener * l, int threads = 0);
+
 //! The metrical grid the audio settles on.
 struct grid
 {

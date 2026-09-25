@@ -1,23 +1,31 @@
 #ifndef BPMCORE_H
 #define BPMCORE_H
 
-// Tempo and rhythm analysis for Argentine tango recordings.
+// Tempo, rhythm, tuning and key analysis for Argentine tango recordings.
 //
 // This library is deliberately free of foobar2000, Windows and any other host:
 // it takes mono PCM and standard C++, and nothing else. The foobar2000
 // component is a thin shell around it, and the same sources are meant to build
 // on macOS, Linux and ARM without change.
 //
-// Two things come out of one pass over a track:
+// Four things come out of one decode of a track:
 //
 //   * the tempo, expressed on the metrical level a dancer taps - the beat for
 //     a tango, the bar for a vals or a milonga, the quarter note beneath
 //     the skank for a reggae;
-//   * which of those four rhythms it is, or none of them.
+//   * which of those four rhythms it is, or none of them;
+//   * how far the recording sits from the A=440 grid, in cents;
+//   * what key it is in, with two alternates and a confidence.
 //
-// The two are not independent. Deciding the tapped level needs the rhythm, so
-// the classifier runs first and the tempo is reported on the level that rhythm
-// implies. See docs/tango-analysis.md for how both were derived and measured.
+// The first two are not independent. Deciding the tapped level needs the
+// rhythm, so the classifier runs first and the tempo is reported on the level
+// that rhythm implies. See docs/tango-analysis.md for how both were derived
+// and measured.
+//
+// The other two are independent of the tempo and of each other, and ride along
+// on a decode that is happening anyway - which is the expensive part of a
+// library scan. See key-detection-feature-plan.md for how they were measured
+// and what was tried and rejected along the way.
 
 #include <cstddef>
 #include <memory>
@@ -40,6 +48,93 @@ enum rhythm_class
 
 //! "Tango", "Vals", "Milonga", "Reggae" or "Other". Never null.
 const char * rhythm_name(int cls);
+
+enum key_confidence
+{
+	key_confidence_low = 0,
+	key_confidence_medium,
+	key_confidence_high
+};
+
+//! "low", "medium" or "high". Never null.
+const char * key_confidence_name(int confidence);
+
+//! One of the 24 keys, with how well the track's chroma fits its profile.
+struct key_candidate
+{
+	int root = -1;      //!< pitch class of the tonic, 0 = C; -1 when unset
+	bool minor = false;
+	double score = 0;   //!< correlation with the profile, -1 to 1
+};
+
+//! How a key is spelt, given its signature: flat keys get flat names.
+//!
+//! Tango sits in Bb, Eb, Ab, Gm, Cm and Fm constantly, and printing those as
+//! A#, D#, G# is the wrong spelling rather than a different one. Never null.
+const char * key_name(int root, bool minor);
+
+//! Candidates reported. The true key is the first of them 60% of the time and
+//! somewhere in the three 93% of the time, which is the whole reason there is
+//! a list rather than an answer.
+enum { key_candidate_count = 3 };
+
+//! Where a recording sits against A=440, and what key it is in.
+//!
+//! Two separate measurements that share one spectral pass, because the key
+//! cannot be read off an off-speed transfer until the offset is known and
+//! taken out.
+struct key_analysis
+{
+	bool ok = false;   //!< false when the track was too short or had no pitch in it
+
+	//! Cents from A=440, in (-50, +50].
+	//!
+	//! Known only modulo 100: a transfer running a whole semitone fast
+	//! measures the same as one at pitch. `suggest_retune` is what resolves
+	//! that, using the year; nothing here can.
+	double tuning_cents = 0;
+	//! How tightly the peaks agree about that offset, 0 to 1. Below about 0.25
+	//! the track had no stable pitch to measure - applause, a drum solo, noise.
+	double tuning_r = 0;
+	bool tuning_ok = false;    //!< `tuning_r` cleared the threshold
+	//! The offset is within 5 cents of the wrap, where the pitch-class binning
+	//! becomes unstable and the key can land a semitone out.
+	bool near_wrap = false;
+
+	//! The key to report. Not necessarily `candidates[0]`: where the mode was
+	//! tracked it is the profile's key signature with the mode that actually
+	//! held for most of the track, which is the better answer and sometimes a
+	//! different one.
+	key_candidate best;
+
+	//! The profile's own ranking, best first, with the scores it gave them.
+	key_candidate candidates[key_candidate_count];
+	int candidate_count = 0;
+	//! Gap between the first and second candidate, which is what the
+	//! confidence band is drawn from. In the top band the answer is right 86%
+	//! of the time and the true key is among the candidates every time.
+	double margin = 0;
+	int confidence = key_confidence_low;
+
+	//! Share of the track where the major of the relative pair was in charge,
+	//! and how many times it changed hands. -1 when the track was too short to
+	//! track, which needs about 21 seconds.
+	//!
+	//! This is not a key change: a tango with a minor A section and a major B
+	//! section keeps one key signature throughout. It is which of the
+	//! signature's two tonics the music is sitting on.
+	double major_fraction = -1;
+	int mode_switches = -1;
+	int mode_windows = 0;
+
+	//! Weight in each pitch class, summing to 1, after the tuning offset has
+	//! been taken out. Kept for diagnostics; nothing downstream needs it.
+	double chroma[12] = { 0 };
+
+	double duration = 0;
+	int frames = 0;
+	std::size_t peaks = 0;     //!< sinusoid peaks the measurements were drawn from
+};
 
 struct analysis
 {
@@ -84,11 +179,56 @@ struct analysis
 	//! beat are used, so on a track with a long rubato introduction this is the
 	//! first tempo there was one to measure.
 	double initial_bpm = 0;
+
+	//! Tuning and key, from the same decode but not from the same spectral
+	//! pass - the two want different window lengths, a tempo wanting 46ms and
+	//! a pitch wanting 372ms. Left at `ok == false` when `options::detect_key`
+	//! was off, and filled in even on a track whose tempo could not be
+	//! measured: the two answers stand or fall separately.
+	key_analysis key;
 };
 
 //! Windows a track needs before `bpm_spread` is reported at all. At a
 //! 3-second hop this is a little over 20 seconds of audio.
 extern const int spread_min_windows;
+
+//! A=435 expressed against A=440, in cents. -19.79.
+double key_a435_offset();
+
+//! Speed change that applies a correction of `cents`, as a percentage.
+//! Negative slows the playback down.
+double retune_percent(double cents);
+
+enum retune_target { retune_a440 = 0, retune_a435 };
+
+//! "A=440" or "A=435". Never null.
+const char * retune_target_name(int target);
+
+//! One way of putting a transfer back on pitch.
+struct retune_option
+{
+	double cents = 0;     //!< correction to apply
+	double percent = 0;   //!< the same, as a speed change
+	int target = retune_a440;
+};
+
+//! Share of recordings still cut at A=435 in `year`; -1 where no suggestion
+//! should be made at all, which is an unknown year or 1976 onwards.
+//!
+//! Measured from TangoTunes' hand-set transfer pitches. Two orquestas three
+//! years apart in switching, so the transition window 1939-1944 is wide and
+//! its values are shrunk toward even odds.
+double key_era_p435(int year);
+
+//! Ranked speed corrections for a measured offset, best first.
+//!
+//! Writes at most `max_out` and returns how many. Returns 0 for an unknown
+//! year or one from 1976 on, when there is nothing useful to say.
+//!
+//! There is more than one answer because the measurement is modulo 100 cents
+//! and because, in the transition years, both reference pitches were in use -
+//! so the year chooses the target and the candidates carry the rest.
+int suggest_retune(double tuning_cents, int year, retune_option * out, int max_out);
 
 //! Optional host hook. Analysis stops early and returns `ok == false` when
 //! `cancelled` goes true.
@@ -106,6 +246,12 @@ struct options
 	//! 0 asks the library to decide from the hardware; 1 keeps everything on
 	//! the calling thread. The answer is identical either way.
 	int threads = 0;
+
+	//! Measure the tuning offset and the key as well as the tempo.
+	//!
+	//! Roughly doubles the analysis, which is still a small fraction of what
+	//! decoding the track costs. Off leaves `analysis::key` empty.
+	bool detect_key = true;
 };
 
 //! Longest stretch of audio analysed. A tango side is two to three minutes;

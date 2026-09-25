@@ -17,10 +17,10 @@ rather than keeping a copy of its own.
 
 ## bpmcore
 
-The tempo and rhythm analysis behind `Source/BPMAnalyzer`, taken from
+The tempo, rhythm and key analysis behind `Source/BPMAnalyzer`, taken from
 
     https://github.com/shaforostoff/foo_rubato   bpmcore/
-    revision d853d0b4f56d749f00264fc25196a70819653481, 2026-09-17
+    revision b61c77a561f9e67b1490131320af365265e63748, 2026-09-24
 
 `bpmcore` is deliberately free of any host -- no foobar2000, no Windows, no
 AudioToolbox -- so the same sources build here as they do in the foobar2000
@@ -29,7 +29,8 @@ component.  It takes mono PCM and the standard library and nothing else, and
 is a copy of a directory rather than a port of one: nothing needed changing.
 
 Start at `bpmcore/bpmcore.h`.  The method and the measurements are in
-`docs/tango-analysis.md` upstream.
+`docs/tango-analysis.md` upstream, and for the key in
+`key-detection-feature-plan.md` beside it.
 
 Every file is here except `CMakeLists.txt`, which describes a build this
 project does not use.  What it settles, the Xcode project settles instead:

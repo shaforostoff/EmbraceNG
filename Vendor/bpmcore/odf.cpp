@@ -87,11 +87,26 @@ namespace
 				// pipelines cleanly only when nothing else is storing alongside
 				// it. log(1 + z) rather than log1p(z): z is never small enough
 				// here for the difference to reach the sums, and log is faster.
+				//
+				// The magnitude and its logarithm are formed at single
+				// precision whatever width the transform ran at - `logf` and
+				// `sqrtf` are about a third cheaper than their double
+				// counterparts and this loop is the largest single cost in the
+				// analysis. What comes out is kept as double so that the
+				// difference below is exact.
+				//
+				// Not bit-exact, so it was measured rather than argued: over
+				// the whole 12,163-track collection not one changed rhythm,
+				// meter or metrical level, and the largest tempo difference
+				// anywhere was 0.0005 BPM. docs/tango-analysis.md carries the
+				// run and the yardstick it is small against.
 				const fft_cpx * bins = m_fft.bins() + p.bin_lo;
+				const float scale = static_cast<float>(p.scale);
 				for (int k = 0; k < p.span; k++)
 				{
-					const double re = bins[k].r, im = bins[k].i;
-					m_cur[k] = std::log(1.0 + p.scale * std::sqrt(re * re + im * im));
+					const float re = static_cast<float>(bins[k].r);
+					const float im = static_cast<float>(bins[k].i);
+					m_cur[k] = std::log(1.0f + scale * std::sqrt(re * re + im * im));
 				}
 
 				// `first` is only the predecessor of this block's first output
@@ -105,9 +120,12 @@ namespace
 						for (int k = p.band_lo[b] - p.bin_lo; k < p.band_hi[b] - p.bin_lo; k++)
 						{
 							// Half-wave rectified: energy appearing counts as an
-							// onset, energy dying away does not.
+							// onset, energy dying away does not. Written as a
+							// select rather than a branch - the sign is not
+							// predictable, and adding a zero changes no sum -
+							// which measured six times faster over this loop.
 							const double d = m_cur[k] - m_prev[k];
-							if (d > 0) sum += d;
+							sum += d > 0 ? d : 0.0;
 						}
 						p.out[static_cast<std::size_t>(b) * p.frames + index] =
 							static_cast<float>(sum);

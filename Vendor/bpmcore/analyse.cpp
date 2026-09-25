@@ -20,6 +20,26 @@ namespace
 	{
 		analysis result;
 		const int threads = opt != nullptr ? opt->threads : 0;
+		const bool want_key = opt == nullptr || opt->detect_key;
+
+		// Tuning and key first, so that a side whose tempo cannot be measured
+		// at all - a rubato introduction on its own, a vocal waltz the grid
+		// never settles on - still comes back with a key. The two stages cost
+		// roughly the same, so each gets half the progress bar.
+		progress_range key_progress(l, 0.0, 0.5);
+		progress_range tempo_progress(l, want_key ? 0.5 : 0.0, 1.0);
+		listener * const key_listener = l != nullptr ? &key_progress : nullptr;
+		listener * const tempo_listener = l != nullptr ? &tempo_progress : nullptr;
+
+		if (want_key)
+		{
+			compute_key(mono, count, sample_rate, result.key, key_listener, threads);
+			if (l != nullptr && l->cancelled()) return result;
+		}
+		// From here on `l` is the tempo stage's share of the caller's bar, so
+		// everything below reports and polls through it without knowing that
+		// anything ran before it.
+		l = tempo_listener;
 
 		odf o;
 		if (!compute_odf(mono, count, sample_rate, o, l, threads)) return result;
