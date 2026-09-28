@@ -696,6 +696,9 @@ static void sCollectM3UPlaylistURL(NSURL *inURL, NSMutableArray *results, NSInte
 
     } else if (action == @selector(copy:)) {
         return [[self selectedTracks] count] > 0;
+
+    } else if (action == @selector(cut:)) {
+        return [self canDeleteSelectedTracks];
     
     } else if (action == @selector(delete:)) {
         return [self _validateDeleteWithMenuItem:menuItem];
@@ -927,6 +930,12 @@ static void sCollectM3UPlaylistURL(NSURL *inURL, NSMutableArray *results, NSInte
         }
     }
 
+    [self _removeSelectedTracks];
+}
+
+
+- (void) _removeSelectedTracks
+{
     NSIndexSet *indexSet = [[self tableView] selectedRowIndexes];
     NSMutableIndexSet *indexSetToRemove = [NSMutableIndexSet indexSet];
     
@@ -1105,6 +1114,15 @@ static void sCollectM3UPlaylistURL(NSURL *inURL, NSMutableArray *results, NSInte
     NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
     [pasteboard clearContents];
     [pasteboard writeObjects:items];
+}
+
+
+- (void) cut:(id)sender
+{
+    if (![self canDeleteSelectedTracks]) return;
+
+    [self copy:sender];
+    [self _removeSelectedTracks];
 }
 
 

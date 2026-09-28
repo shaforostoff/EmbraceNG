@@ -14,6 +14,7 @@ extern NSString *EmbraceQueuedTrackPasteboardType;
 
 - (void) saveState;
 
+- (void) cut:(id)sender;
 - (void) copy:(id)sender;
 - (void) paste:(id)sender;
 

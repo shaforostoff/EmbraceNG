@@ -940,6 +940,13 @@ static NSInteger sAutoGapMaximum = 16;
 }
 
 
+- (IBAction) cut:(id)sender
+{
+    EmbraceLogMethod();
+    [[self tracksController] cut:sender];
+}
+
+
 - (IBAction) copy:(id)sender
 {
     EmbraceLogMethod();
@@ -1040,7 +1047,8 @@ static NSInteger sAutoGapMaximum = 16;
 {
     SEL action = [menuItem action];
 
-    if (action == @selector(copy:)   ||
+    if (action == @selector(cut:)    ||
+        action == @selector(copy:)   ||
         action == @selector(paste:)  ||
         action == @selector(delete:) ||
         action == @selector(toggleMarkAsPlayed:) ||
