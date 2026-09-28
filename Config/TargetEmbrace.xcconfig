@@ -14,4 +14,4 @@ CODE_SIGN_ENTITLEMENTS = Resources/Embrace.entitlements
 // rather than carrying literals, so a release bump is two text edits here and
 // nowhere else -- not in the project file, and not in a binary plist.
 MARKETING_VERSION = 4.1.4
-CURRENT_PROJECT_VERSION = 10003
+CURRENT_PROJECT_VERSION = 10004
