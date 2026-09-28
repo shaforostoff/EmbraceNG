@@ -318,6 +318,9 @@ static void sSetDate(NSMutableDictionary *dictionary, NSString *dateString)
         } else if ((key4cc == '\251wrt') && stringValue) { // Composer, '?wrt'
             [dictionary setObject:stringValue forKey:TrackKeyComposer];
 
+        } else if (((key4cc == 'TCOM') || (key4cc == '\00TCM')) && stringValue) { // Composer, ID3v2.3 'TCOM' / ID3v2.2 'TCM'
+            [dictionary setObject:stringValue forKey:TrackKeyComposer];
+
         } else if (key4cc == 'gnre') { // Genre, 'gnre' - Use sGenreList lookup
             NSInteger i = [numberValue integerValue];
             if (i > 0 && i < 127) {
@@ -498,6 +501,64 @@ static void sSetDate(NSMutableDictionary *dictionary, NSString *dateString)
 }
 
 
+// AVFoundation can return nothing at all for an ID3v2.4 tag followed by
+// padding: every 'org.id3' item vanishes and only -commonMetadata survives, so
+// BPM, key, date and composer go missing while title and artist still show.
+// It depends on the frames and on how much padding follows them, and cutting
+// the padding off makes the same frames parse.  So this reads the tag from the
+// file, walks its frames to find where they end, and hands only that much to
+// -_parseID3WithBytes:length:.
+//
+- (void) _parseID3WithoutPadding
+{
+    NSFileHandle *fileHandle = [NSFileHandle fileHandleForReadingFromURL:_URL error:NULL];
+    NSData *header = [fileHandle readDataUpToLength:10 error:NULL];
+
+    const UInt8 *h = [header bytes];
+    if ([header length] < 10 || memcmp(h, "ID3", 3) != 0) return;
+
+    UInt8 version = h[3];
+    UInt8 flags   = h[5];
+
+    // Unsynchronised tags and extended headers are rare enough to leave to AVFoundation
+    if (version < 3 || version > 4 || (flags & 0xC0)) return;
+
+    NSUInteger tagSize = (h[6] << 21) | (h[7] << 14) | (h[8] << 7) | h[9];
+    NSData *body = [fileHandle readDataUpToLength:tagSize error:NULL];
+    [fileHandle closeFile];
+
+    const UInt8 *bytes = [body bytes];
+    NSUInteger length = [body length];
+    NSUInteger i = 0;
+
+    while ((i + 10) <= length && bytes[i] != 0) {
+        const UInt8 *s = bytes + i + 4;
+
+        NSUInteger frameSize = (version == 4) ?
+            ((s[0] << 21) | (s[1] << 14) | (s[2] << 7) | s[3]) :
+            ((s[0] << 24) | (s[1] << 16) | (s[2] <<  8) | s[3]);
+
+        if ((i + 10 + frameSize) > length) break;
+        i += 10 + frameSize;
+    }
+
+    if (i == 0) return;
+
+    UInt8 unpaddedHeader[10];
+    memcpy(unpaddedHeader, h, 6);
+    unpaddedHeader[5] &= ~0x10; // A footer only follows the full tag
+    unpaddedHeader[6] = (i >> 21) & 0x7F;
+    unpaddedHeader[7] = (i >> 14) & 0x7F;
+    unpaddedHeader[8] = (i >>  7) & 0x7F;
+    unpaddedHeader[9] =  i        & 0x7F;
+
+    NSMutableData *tag = [NSMutableData dataWithBytes:unpaddedHeader length:10];
+    [tag appendBytes:bytes length:i];
+
+    [self _parseID3WithBytes:[tag bytes] length:[tag length]];
+}
+
+
 - (void) _parseUsingCustomParsers
 {
     NSData *data = [NSData dataWithContentsOfURL:_URL];
@@ -540,8 +601,11 @@ static void sSetDate(NSMutableDictionary *dictionary, NSString *dateString)
             [self _parseUsingAudioToolbox];
             [self _parseUsingCustomParsers];
 
-        } else {
-            if (asset) [self _parseUsingAVAsset:asset intoDictionary:_metadata];
+        } else if (asset) {
+            BOOL hasID3Items = [[asset metadataForFormat:AVMetadataFormatID3Metadata] count] > 0;
+
+            [self _parseUsingAVAsset:asset intoDictionary:_metadata];
+            if (!hasID3Items) [self _parseID3WithoutPadding];
         }
     }
     
