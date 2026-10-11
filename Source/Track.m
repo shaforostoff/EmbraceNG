@@ -194,6 +194,27 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
 }
 
 
+// Whether a file is on a disk built into this Mac, which cannot go away during
+// a set, so the track can play from the file itself.  Anything else -- a USB or
+// Thunderbolt drive, an SD card, a disk image, a network share -- can vanish
+// mid-set and is copied into the internal directory first.
+//
+// Asked of the volume rather than read off a /Volumes prefix: a second internal
+// disk mounts there too, and so does a share.  A share has no answer to
+// "internal", which reads as NO and so is copied.
+//
+static BOOL sIsOnFixedVolume(NSURL *url)
+{
+    NSNumber *isInternal  = nil;
+    NSNumber *isEjectable = nil;
+
+    [url getResourceValue:&isInternal  forKey:NSURLVolumeIsInternalKey  error:NULL];
+    [url getResourceValue:&isEjectable forKey:NSURLVolumeIsEjectableKey error:NULL];
+
+    return [isInternal boolValue] && ![isEjectable boolValue];
+}
+
+
 + (NSSet *) keyPathsForValuesAffectingValueForKey:(NSString *)key
 {
     NSSet *keyPaths = [super keyPathsForValuesAffectingValueForKey:key];
@@ -684,8 +705,13 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
             NSString *extension = [externalURL pathExtension];
             internalURL = sGetInternalURLForUUID(UUID, extension);
 
+            // A copy made earlier -- by an older build, or while the file sat on
+            // a drive that can go away -- is still the one to play.
             if (![[NSFileManager defaultManager] fileExistsAtPath:[internalURL path]]) {
-                if (externalURL) {
+                if (sIsOnFixedVolume(externalURL)) {
+                    internalURL = externalURL;
+
+                } else if (externalURL) {
                     if (![[NSFileManager defaultManager] copyItemAtURL:externalURL toURL:internalURL error:&error]) {
                         EmbraceLog(@"Track", @"%@, failed to copy to internal location: %@", self, error);
 
@@ -913,7 +939,13 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
 {
     NSError *error = nil;
     [[NSFileManager defaultManager] removeItemAtURL:sGetStateURLForUUID(_UUID) error:&error];
-    if (_internalURL) [[NSFileManager defaultManager] removeItemAtURL:_internalURL error:&error];
+    // Only a copy this app made.  A track on an internal disk plays the user's
+    // own file, and its internalURL is that file.
+    NSURL *copyURL = sGetInternalURLForUUID(_UUID, [_internalURL pathExtension]);
+
+    if (_internalURL && [[_internalURL path] isEqualToString:[copyURL path]]) {
+        [[NSFileManager defaultManager] removeItemAtURL:_internalURL error:&error];
+    }
 
     _cleared = YES;
 }
