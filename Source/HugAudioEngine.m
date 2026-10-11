@@ -859,21 +859,14 @@ static OSStatus sHandleAudioDeviceOverload(AudioObjectID inObjectID, UInt32 inNu
 - (void) updateEffectAudioUnits:(NSArray<AUAudioUnit *> *)effectAudioUnits
 {
     if (_effectAudioUnits != effectAudioUnits || ![_effectAudioUnits isEqual:effectAudioUnits]) {
-        NSMutableArray *effectsToAdd    = [NSMutableArray array];
         NSMutableArray *effectsToRemove = [NSMutableArray array];
 
         for (AUAudioUnit *effect in _effectAudioUnits) {
             if (![effectAudioUnits containsObject:effect]) {
-                [effectsToAdd addObject:effect];
-            }
-        }
-
-        for (AUAudioUnit *effect in effectAudioUnits) {
-            if (![_effectAudioUnits containsObject:effect]) {
                 [effectsToRemove addObject:effect];
             }
         }
-    
+
         _effectAudioUnits = effectAudioUnits;
         [self _reconnectGraph];
         
