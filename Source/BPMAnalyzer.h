@@ -75,9 +75,6 @@ extern double BPMAnalyzerGetBeatsPerMinute(BPMAnalyzer *analyzer);
 // would silently mean something else.
 extern NSString *BPMAnalyzerGetRhythm(BPMAnalyzer *analyzer);
 
-// The classifier's probability for that rhythm, 0..1.
-extern double BPMAnalyzerGetConfidence(BPMAnalyzer *analyzer);
-
 // The key, spelt the way bpmcore spells it -- "Gm", "Bb", "F#m" -- which is
 // one of the traditional names GetTonalityForString already reads.  Flat keys
 // get flat names, because tango lives in Bb, Eb and Gm and a column reading

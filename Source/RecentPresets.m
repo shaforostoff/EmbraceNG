@@ -8,12 +8,6 @@ static NSString * const sRecentPresetsKey     = @"recent-presets";
 static const NSUInteger sMaximumRecentPresets = 7;
 
 
-NSUInteger GetMaximumRecentPresetCount(void)
-{
-    return sMaximumRecentPresets;
-}
-
-
 NSArray<NSString *> *GetRecentPresetPaths(NSString *typeName)
 {
     if (!typeName) return @[ ];

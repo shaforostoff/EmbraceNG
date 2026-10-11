@@ -146,13 +146,6 @@ NSString *BPMAnalyzerGetRhythm(BPMAnalyzer *analyzer)
 }
 
 
-double BPMAnalyzerGetConfidence(BPMAnalyzer *analyzer)
-{
-    if (!analyzer || !analyzer->result.ok) return 0;
-    return analyzer->result.confidence;
-}
-
-
 NSString *BPMAnalyzerGetKey(BPMAnalyzer *analyzer)
 {
     if (!analyzer || !analyzer->result.key.ok) return @"";

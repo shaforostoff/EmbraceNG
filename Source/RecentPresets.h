@@ -18,9 +18,6 @@
 extern "C" {
 #endif
 
-// Seven, which is what the "..." menu lists.
-extern NSUInteger GetMaximumRecentPresetCount(void);
-
 // Paths, newest first.  Includes presets whose files have since gone: an
 // unmounted volume should hide its presets, not make the app forget them.
 extern NSArray<NSString *> *GetRecentPresetPaths(NSString *typeName);

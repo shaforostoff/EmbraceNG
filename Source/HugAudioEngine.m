@@ -481,8 +481,6 @@ static OSStatus sHandleAudioDeviceOverload(AudioObjectID inObjectID, UInt32 inNu
     if (sampleRate && frameSize) {
         AVAudioFormat *format = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:sampleRate channels:2];
         
-        [_outputSettings objectForKey:HugAudioSettingFrameSize];
-        
         for (AUAudioUnit *unit in _effectAudioUnits) {
             NSError *error = nil;
 

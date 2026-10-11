@@ -937,7 +937,6 @@ static void sCollectM3UPlaylistURL(NSURL *inURL, NSMutableArray *results, NSInte
 - (void) _removeSelectedTracks
 {
     NSIndexSet *indexSet = [[self tableView] selectedRowIndexes];
-    NSMutableIndexSet *indexSetToRemove = [NSMutableIndexSet indexSet];
     
     [indexSet enumerateIndexesUsingBlock:^(NSUInteger index, BOOL *stop) {
         Track *track = [self trackAtIndex:index];
@@ -945,7 +944,6 @@ static void sCollectM3UPlaylistURL(NSURL *inURL, NSMutableArray *results, NSInte
 
         if ([track trackStatus] == TrackStatusQueued) {
             [track cancelLoad];
-            [indexSetToRemove addIndex:index];
         }
     }];
     

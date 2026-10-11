@@ -19,7 +19,6 @@ NSString * const TrackKeyComposer         = @"composer";
 NSString * const TrackKeyStartTime        = @"startTime";
 NSString * const TrackKeyStopTime         = @"stopTime";
 NSString * const TrackKeyInitialKey       = @"initialKey";
-NSString * const TrackKeyTonality         = @"tonality";
 NSString * const TrackKeyTrackLoudness    = @"trackLoudness";
 NSString * const TrackKeyTrackPeak        = @"trackPeak";
 NSString * const TrackKeyOverviewData     = @"overviewData";

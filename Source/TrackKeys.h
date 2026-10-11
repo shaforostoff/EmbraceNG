@@ -16,7 +16,6 @@ extern NSString * const TrackKeyDuration;
 extern NSString * const TrackKeyDecodedDuration;
 extern NSString * const TrackKeyExpectedDuration;
 extern NSString * const TrackKeyInitialKey;
-extern NSString * const TrackKeyTonality;
 extern NSString * const TrackKeyTrackLoudness;
 extern NSString * const TrackKeyTrackPeak;
 extern NSString * const TrackKeyOverviewData;
