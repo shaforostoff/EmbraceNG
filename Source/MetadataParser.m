@@ -482,6 +482,9 @@ static void sSetDate(NSMutableDictionary *dictionary, NSString *dateString)
             SInt32 chunkSize = OSSwapBigToHostInt(*(SInt32 *)(bytes + i));
             i += 4;
 
+            // A negative size walks backwards; -8 lands on this same header forever
+            if (chunkSize < 0) break;
+
             if (chunkID == 'ID3 ' && ((i + chunkSize) <= length)) {
                 [self _parseID3WithBytes:(bytes + i) length:chunkSize];
                 found = YES;
