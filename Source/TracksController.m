@@ -1095,8 +1095,11 @@ static void sCollectM3UPlaylistURL(NSURL *inURL, NSMutableArray *results, NSInte
     NSMutableArray *items = [NSMutableArray array];
 
     for (Track *track in tracks) {
-        NSURL *fileURL = [track internalURL];
-        if (!fileURL) fileURL = [track externalURL];
+        // The user's own file, so that a pasted track is that file again: Music's
+        // start and stop times, the fallback title and duplicate detection all
+        // go by its path.  The private copy only when the original is gone.
+        NSURL *fileURL = [track externalURL];
+        if (![fileURL checkResourceIsReachableAndReturnError:NULL]) fileURL = [track internalURL];
         if (!fileURL) continue;
 
         NSPasteboardItem *item = [[NSPasteboardItem alloc] init];
