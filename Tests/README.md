@@ -620,3 +620,25 @@ does. `EmbraceAudioUnitFullStateIsWellFormed` validates the blob's shape and
 deliberately not its provenance, so a state from the wrong unit is installed
 rather than refused. That is pre-existing and reachable from **Load Preset…**
 already. Each phase now gets its own directory and its own list.
+
+---
+
+# Tag parsers
+
+`MetadataParserTests.m` covers the two places `MetadataParser` walks raw bytes
+out of a file: the AIFF chunk walk that finds an embedded ID3 tag, and the
+ID3v2 frame walk that cuts padding off a tag before AVFoundation reads it.
+
+```bash
+Tests/run-metadata-parser-tests.sh   # headless; writes small files into $TMPDIR
+```
+
+21 checks, all passing on macOS 14.8.8.
+
+Each walk gets a tag that should read -- title, BPM and the composer from
+`TCOM`, with and without padding, in ID3v2.3 and 2.4 -- and damaged files that
+must return: a frame or a tag claiming more bytes than exist, and AIFF chunk
+sizes with the top bit set. Every parse runs on its own thread with a ten
+second limit, because the failure that mattered was a hang: a chunk size of
+`0xFFFFFFF8` walked back onto its own header forever, on the worker's one
+metadata queue. Against the parser from before that fix, that check fails.
