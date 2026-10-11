@@ -797,7 +797,7 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
 
 - (void) _requestWorkerCommand:(WorkerTrackCommand)command measuresTempo:(BOOL)measuresTempo
 {
-    __weak id weakSelf = self;
+    __weak Track *weakSelf = self;
 
     NSUUID *UUID        = [self UUID];
     NSURL  *internalURL = [self internalURL];
@@ -808,6 +808,20 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
 
     id<WorkerProtocol> worker = [GetAppDelegate() workerProxyWithErrorHandler:^(NSError *error) {
         EmbraceLog(@"Track", @"Received error for worker command %ld: %@", command, error);
+
+        if (command == WorkerTrackCommandReadMetadata) return;
+
+        // The worker died with this scan in flight, so no reply is coming.  Both
+        // flags are what stop a second request going out, and the player waits
+        // on the overview by asking -startPriorityAnalysis every 0.1s -- left
+        // set, it would wait forever.  Cleared, its next ask resends.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            Track *strongSelf = weakSelf;
+            if (!strongSelf) return;
+
+            strongSelf->_analysisRequested         = NO;
+            strongSelf->_priorityAnalysisRequested = NO;
+        });
     }];
     
     
