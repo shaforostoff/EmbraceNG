@@ -307,6 +307,7 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
         
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_handleApplicationWillTerminate:) name:NSApplicationWillTerminateNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_handlePreferencesDidChange:) name:PreferencesDidChangeNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_handleDidUpdateLibraryMetadata:) name:MusicAppManagerDidUpdateLibraryMetadataNotification object:nil];
     }
 
     return self;
@@ -889,8 +890,6 @@ static NSURL *sGetInternalURLForUUID(NSUUID *UUID, NSString *extension)
         [self setStartTime:startTime];
         [self setStopTime: stopTime];
     }
-    
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_handleDidUpdateLibraryMetadata:) name:MusicAppManagerDidUpdateLibraryMetadataNotification object:nil];
 }
 
 
