@@ -33,6 +33,7 @@ static const int sMaxParameters = 8;
 // what makes A/B useful: declick keeps reading ahead by the same amount, so the
 // two versions line up sample for sample, and dehum's detector keeps tracking, so
 // switching back does not cost the several seconds it takes to re-acquire a line.
+// Bypass clears delta too, or a zero wet mix would leave nothing to hear at all.
 //
 struct RestorationState {
     std::atomic<float> value[sMaxParameters];
@@ -255,6 +256,7 @@ struct DeclickDSP {
         p.passes      = (int)lrintf(state->get(4));
         p.order       = (int)lrintf(state->get(5));
         p.dryWet      = state->isBypassed() ? 0.0f : state->get(6);
+        p.delta       = !state->isBypassed() && state->get(7) >= 0.5f;
         p.sanitize();
 
         return p;
@@ -391,7 +393,8 @@ struct DeclickDSP {
         EmbraceAUMakeParameter(@"depth",       NSLocalizedString(@"Repair Depth", nil), 3, 0,   1,  defaults.depth,       kAudioUnitParameterUnit_Generic),
         EmbraceAUMakeParameter(@"passes",      NSLocalizedString(@"Passes",       nil), 4, 1,   3,  defaults.passes,      kAudioUnitParameterUnit_Indexed),
         EmbraceAUMakeParameter(@"order",       NSLocalizedString(@"Model Order",  nil), 5, declick::kMinOrder, declick::kMaxOrder, defaults.order, kAudioUnitParameterUnit_Indexed),
-        EmbraceAUMakeParameter(@"dryWet",      NSLocalizedString(@"Dry/Wet",      nil), 6, 0,   1,  defaults.dryWet,      kAudioUnitParameterUnit_Generic)
+        EmbraceAUMakeParameter(@"dryWet",      NSLocalizedString(@"Dry/Wet",      nil), 6, 0,   1,  defaults.dryWet,      kAudioUnitParameterUnit_Generic),
+        EmbraceAUMakeParameter(@"delta",       NSLocalizedString(@"Delta",        nil), 7, 0,   1,  defaults.delta,       kAudioUnitParameterUnit_Boolean)
     ];
 }
 
@@ -401,9 +404,9 @@ struct DeclickDSP {
 {
     return @[
         NSLocalizedString(@"How readily a sample is called a click. The default puts the trigger at "
-            "3.9 sigma above the local noise estimate; on 78rpm tango transfers that takes impulsive "
-            "events from roughly 71 per second down to 14. Raise it towards 0.8 to catch more, at the "
-            "cost of flagging music as damage.", nil),
+            "3.2 sigma above the local noise estimate. 0.7 measures marginally better against injected "
+            "crackle, but 0.8 won the listening comparison on full shellac transfers, with no music "
+            "audible in what it removes. Higher catches more, at the cost of flagging music as damage.", nil),
 
         NSLocalizedString(@"How far each detection spreads outwards into the tail of the click. "
             "Higher repairs more of the decay; too high starts replacing good audio either side of it.", nil),
@@ -411,9 +414,9 @@ struct DeclickDSP {
         NSLocalizedString(@"The longest single stretch that may be reconstructed. Damage longer than "
             "this is left alone rather than guessed at.", nil),
 
-        NSLocalizedString(@"How much of the estimated click is subtracted. 0 is the setting measured "
-            "to add the least error of its own, against real clicks injected into a clean master at "
-            "known positions. Raising it removes more of each click but substitutes more guesswork.", nil),
+        NSLocalizedString(@"How much of the estimated click is subtracted. 1 replaces the damaged "
+            "samples outright. 0 subtracts the 45% fraction that adds the least whole-file error, but "
+            "that caps every repair at -5.2 dB however good the estimate is.", nil),
 
         NSLocalizedString(@"How many times the detector sweeps each block. A second pass catches "
             "clicks that the first pass's repairs uncover.", nil),
@@ -421,10 +424,15 @@ struct DeclickDSP {
         NSLocalizedString(@"Taps in the autoregressive model that predicts what the waveform should "
             "have been. The lever that pays most: against injected-click ground truth, 128 takes "
             "whole-file error from +0.60 to +1.31 dB and 256 to +2.55 dB. It also costs real CPU and "
-            "adds latency, which is why the default stops at 64.", nil),
+            "adds latency: 128 is about 1.9x the CPU of 64, which gives up surprisingly little where "
+            "that is too much.", nil),
 
         NSLocalizedString(@"Blend of the repaired signal against the original. 0 passes the input "
-            "through untouched.", nil)
+            "through untouched.", nil),
+
+        NSLocalizedString(@"Outputs what the repair takes out - the input minus the output - instead "
+            "of the repaired audio. For testing: it should be crackle and clicks and nothing else, and "
+            "any music heard in it is being damaged. Saved with the preset; untick it when done.", nil)
     ];
 }
 
@@ -531,6 +539,7 @@ struct DehumDSP {
         p.frequency   = state->get(4);
         p.rumbleHz    = state->get(5);
         p.dryWet      = state->isBypassed() ? 0.0f : state->get(6);
+        p.delta       = !state->isBypassed() && state->get(7) >= 0.5f;
         p.sanitize();
 
         return p;
@@ -744,7 +753,8 @@ static int sScoutHumLines(NSURL *fileURL, float sensitivity, float searchTo,
         EmbraceAUMakeParameter(@"harmonics",   NSLocalizedString(@"Harmonics",   nil), 3, 1,   dehum::kMaxHarmonics, defaults.harmonics, kAudioUnitParameterUnit_Indexed),
         EmbraceAUMakeParameter(@"frequency",   NSLocalizedString(@"Frequency",   nil), 4, 0,   500, defaults.frequency,   kAudioUnitParameterUnit_Hertz),
         EmbraceAUMakeParameter(@"rumble",      NSLocalizedString(@"Rumble",      nil), 5, 0,   200, defaults.rumbleHz,    kAudioUnitParameterUnit_Hertz),
-        EmbraceAUMakeParameter(@"dryWet",      NSLocalizedString(@"Dry/Wet",     nil), 6, 0,   1,   defaults.dryWet,      kAudioUnitParameterUnit_Generic)
+        EmbraceAUMakeParameter(@"dryWet",      NSLocalizedString(@"Dry/Wet",     nil), 6, 0,   1,   defaults.dryWet,      kAudioUnitParameterUnit_Generic),
+        EmbraceAUMakeParameter(@"delta",       NSLocalizedString(@"Delta",       nil), 7, 0,   1,   defaults.delta,       kAudioUnitParameterUnit_Boolean)
     ];
 }
 
@@ -779,7 +789,12 @@ static int sScoutHumLines(NSURL *fileURL, float sensitivity, float searchTo,
             "of the bass along with it.", nil),
 
         NSLocalizedString(@"Blend of the processed signal against the original. 0 passes the input "
-            "through untouched.", nil)
+            "through untouched.", nil),
+
+        NSLocalizedString(@"Outputs what the notches take out - the input minus the output - instead "
+            "of the cleaned audio. For testing: it should be hum and nothing else. Rumble is left out "
+            "of it, because what a high-pass removes carries the whole spectrum as phase shift and "
+            "sounds like the music. Saved with the preset; untick it when done.", nil)
     ];
 }
 

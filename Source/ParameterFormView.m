@@ -45,8 +45,10 @@ static const CGFloat sGap         = 8;
     id<ParameterDescribing> _describing;
     NSArray<AUParameter *> *_parameters;
 
-    NSMutableArray<ParameterSlider *> *_sliders;
-    NSMutableArray<NSTextField *>     *_valueFields;
+    // A slider, or a checkbox for a Boolean parameter, which has no value field
+    // and holds NSNull in its place
+    NSMutableArray<NSControl *> *_controls;
+    NSMutableArray              *_valueFields;
 
     CGSize _fittingSize;
 }
@@ -68,7 +70,7 @@ static const CGFloat sGap         = 8;
         _parameters  = parameters;
         _fittingSize = CGSizeMake(width, height);
 
-        _sliders     = [NSMutableArray arrayWithCapacity:count];
+        _controls    = [NSMutableArray arrayWithCapacity:count];
         _valueFields = [NSMutableArray arrayWithCapacity:count];
 
         [self _buildRows];
@@ -101,6 +103,24 @@ static const CGFloat sGap         = 8;
 
         x += sLabelWidth + sGap;
 
+        // On every control, so the row explains itself wherever the pointer lands
+        NSString *toolTip = [self _toolTipForParameter:parameter];
+        [label setToolTip:toolTip];
+
+        if ([parameter unit] == kAudioUnitParameterUnit_Boolean) {
+            NSButton *checkbox = [NSButton checkboxWithTitle:@"" target:self action:@selector(_handleCheckbox:)];
+            [checkbox setFrame:NSMakeRect(x, y, sSliderWidth, sRowHeight)];
+            [checkbox setTag:row];
+            [checkbox setToolTip:toolTip];
+
+            [self addSubview:checkbox];
+            [_controls addObject:checkbox];
+            [_valueFields addObject:[NSNull null]];
+
+            row++;
+            continue;
+        }
+
         ParameterSlider *slider = [[ParameterSlider alloc] initWithFrame:NSMakeRect(x, y, sSliderWidth, sRowHeight)];
 
         [slider setMinValue:[parameter minValue]];
@@ -111,10 +131,6 @@ static const CGFloat sGap         = 8;
         [slider setAction:@selector(_handleSlider:)];
         [slider setDoubleTarget:self];
         [slider setDoubleSelector:@selector(_handleSliderDoubleClick:)];
-
-        // On all three, so the row explains itself wherever the pointer lands
-        NSString *toolTip = [self _toolTipForParameter:parameter];
-        [label  setToolTip:toolTip];
         [slider setToolTip:toolTip];
 
         // Indexed parameters only take whole numbers, so let the slider snap
@@ -129,7 +145,7 @@ static const CGFloat sGap         = 8;
         }
 
         [self addSubview:slider];
-        [_sliders addObject:slider];
+        [_controls addObject:slider];
 
         x += sSliderWidth + sGap;
 
@@ -192,7 +208,13 @@ static const CGFloat sGap         = 8;
 
     AUParameter *parameter = [_parameters objectAtIndex:row];
 
-    [[_sliders     objectAtIndex:row] setDoubleValue:[parameter value]];
+    if ([parameter unit] == kAudioUnitParameterUnit_Boolean) {
+        NSButton *checkbox = (NSButton *)[_controls objectAtIndex:row];
+        [checkbox setState:([parameter value] >= 0.5) ? NSControlStateValueOn : NSControlStateValueOff];
+        return;
+    }
+
+    [[_controls    objectAtIndex:row] setDoubleValue:[parameter value]];
     [[_valueFields objectAtIndex:row] setStringValue:[self _stringForParameter:parameter]];
 }
 
@@ -208,6 +230,16 @@ static const CGFloat sGap         = 8;
     [parameter setValue:(AUValue)[sender doubleValue] originator:NULL];
 
     [[_valueFields objectAtIndex:row] setStringValue:[self _stringForParameter:parameter]];
+}
+
+
+- (void) _handleCheckbox:(NSButton *)sender
+{
+    NSInteger row = [sender tag];
+    if (row < 0 || row >= (NSInteger)[_parameters count]) return;
+
+    AUParameter *parameter = [_parameters objectAtIndex:row];
+    [parameter setValue:([sender state] == NSControlStateValueOn) ? 1 : 0 originator:NULL];
 }
 
 

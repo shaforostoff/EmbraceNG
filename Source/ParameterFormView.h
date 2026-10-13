@@ -16,8 +16,8 @@
 
 
 // A label, slider and editable value field per parameter, for effects whose audio
-// unit brings no view of its own.  Double-clicking a slider returns that one
-// parameter to its default.
+// unit brings no view of its own; a Boolean parameter gets a checkbox instead.
+// Double-clicking a slider returns that one parameter to its default.
 
 @interface ParameterFormView : NSView
 

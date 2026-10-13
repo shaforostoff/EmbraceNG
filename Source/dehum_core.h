@@ -273,6 +273,12 @@ struct Params {
     float frequency;    //!< 0 = detect automatically, otherwise pin here (Hz)
     float rumbleHz;     //!< 0 = off, otherwise high-pass corner (Hz)
     float dryWet;       //!< 0 = bypass, 1 = full removal
+    //! Output what the notches take out - input minus output - instead of the
+    //! cleaned audio. For listening to what is being removed: it should be the
+    //! hum and nothing else. The rumble high-pass is left out of it, because
+    //! what a minimum-phase high-pass removes is 1-H, which carries the whole
+    //! spectrum as phase shift and would sound like the music - see the README.
+    bool  delta;
 
     static Params defaults() {
         Params p;
@@ -318,6 +324,7 @@ struct Params {
         // keeping.
         p.rumbleHz    = 67.0f;
         p.dryWet      = 1.0f;
+        p.delta       = false;
         return p;
     }
     void sanitize();
@@ -358,6 +365,7 @@ struct Config {
     double manualFreq  = 0.0;    //!< 0 = automatic
     double rumbleHz    = 0.0;    //!< 0 = off
     double wet         = 1.0;
+    bool   delta       = false;  //!< see Params::delta
 
     //! Score a candidate must reach before it is cancelled - see kScoreActivate.
     //! On the reference transfer the score climbs about 1.3 per hop, so the line
@@ -545,17 +553,32 @@ private:
     void   syncManual();
     void   startOsc(Osc & o, double freq);
     void   setOscFreq(Osc & o, double freq);
-    //! `probe` also runs the coherence pair; only the fundamental needs it.
-    double runOsc(Osc & o, double x, bool probe);
-    double runLine(Line & line, double x);
+    //! One oscillator over `n` samples of `y`, in place. `kProbe` also runs the
+    //! coherence pair, which only the fundamental needs; `kWrite` subtracts the
+    //! estimate, which only a confirmed line does.
+    template<bool kProbe, bool kWrite>
+    void   runOsc(Osc & o, double * y, size_t n);
+    template<int K>
+    void   runProbes(Line * const * lines, const double * y, size_t n);
+    //! runProbes<4> with the per-sample work in AVX, for where it is available.
+    void   runProbesWide(Line * const * lines, const double * y, size_t n);
+    //! The longest run every probe in a group can take before one of them is
+    //! due a tracker reading or a renormalisation.
+    size_t probeRun(Line * const * lines, int count, size_t n) const;
+    //! The bookkeeping after a run of `m`. True when the rotator is due to be
+    //! renormalised.
+    static bool probeRenormDue(Osc & o, size_t m);
+    void   runLines(double * y, size_t n);
+    void   runLine(Line & line, double * y, size_t n);
+    void   track(Line & line);
     void   syncHarmonics(Line & line);
     void   designRumble();
-    double runRumble(double x);
+    void   runRumble(double * y, size_t n);
     void   realFftMagnitudes();
     void   designDecimator();
     void   clearDecimator();
-    //! One input sample in; true when a decimated sample comes out.
-    bool   decimate(double x, double * out);
+    //! `n` full rate samples into the analysis window.
+    void   decimate(const double * x, size_t n);
 
     Config m_cfg;
 
@@ -568,11 +591,13 @@ private:
     //! why the cascade is cheap.
     std::vector<double> m_hbCoef;  //!< nonzero taps, stage after stage
     std::vector<int>    m_hbTap;   //!< where each sits in the delay line
-    std::vector<double> m_hbZ;     //!< delay lines, stage after stage
+    //! What each stage has to remember between runs: its last `length - 1`
+    //! inputs, oldest first, stage after stage. A run is laid out after them in
+    //! one straight buffer, so every tap of every output reads at a fixed offset
+    //! and there is no ring to wrap.
+    std::vector<double> m_hbZ;
     int m_hbFirst[kDecimMaxStages + 1];  //!< first tap of stage i
-    int m_hbZAt[kDecimMaxStages + 1];    //!< first delay slot of stage i
-    int m_hbZMask[kDecimMaxStages];      //!< its length, a power of two, less 1
-    int m_hbPos[kDecimMaxStages];        //!< write cursor
+    int m_hbZAt[kDecimMaxStages + 1];    //!< first history slot of stage i
     int m_hbPhase[kDecimMaxStages];      //!< 0 emits, 1 swallows
 
     std::vector<double> m_win;    //!< sliding analysis window, a ring
@@ -610,6 +635,19 @@ private:
     uint32_t m_confirmations = 0;
     uint32_t m_dropouts = 0;
 };
+
+//! The probe kernel this process runs: "avx" where the CPU and OS support AVX,
+//! chosen when the module loads, otherwise "base". Unlike declick's wide
+//! kernels this one is not FMA - it is the same multiplies and adds four probes
+//! at a time - so the output is bit-identical whichever runs, as long as the
+//! compiler does not fuse the base kernel's own multiply-adds, which no build of
+//! this project lets it do on x86.
+const char * kernelName();
+
+//! For tests and benchmarks: false pins the base kernel even where AVX is
+//! available, true goes back to choosing. Process-wide and not thread-safe -
+//! call it before any processing starts.
+void allowWideKernels(bool allow);
 
 //! Median of `n` values, reordering `buf`. Exposed so the tests can pin it.
 double medianInPlace(double * buf, int n);
