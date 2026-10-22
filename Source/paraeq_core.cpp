@@ -9,12 +9,18 @@
 
 #if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || defined(__x86_64__)
 #include <xmmintrin.h>
+#include <emmintrin.h>
 #define PARAEQ_HAVE_MXCSR 1
+// SSE2 is the floor for every x86 configuration this project builds.
+#define PARAEQ_SSE2 1
 #elif defined(_M_ARM64) || defined(__aarch64__)
 #define PARAEQ_HAVE_FPCR 1
 #if defined(_MSC_VER)
 #include <intrin.h>
 #endif
+#endif
+#ifndef PARAEQ_SSE2
+#define PARAEQ_SSE2 0
 #endif
 
 namespace paraeq {
@@ -377,12 +383,10 @@ void Channel::flush()
 }
 
 
-bool Channel::retune(const Config & cfg)
+void Channel::retune(const Config & cfg)
 {
     m_cfg = cfg;
     m_settled = false;
-
-    return true;
 }
 
 
@@ -397,27 +401,16 @@ void Channel::snap()
 }
 
 
-void Channel::glideStep()
+//! The fraction of the remaining distance one sample covers. The step itself is
+//! in runBlock(): straight-line interpolation of the coefficients, which is safe
+//! rather than merely convenient - the stable region |a2| < 1, |a1| < 1 + a2 is
+//! a triangle, so no point between two stable settings is outside it. See the
+//! header.
+double Channel::glideFraction() const
 {
     double g = clampd(m_cfg.glide, 0.0, 1.0);
     if (!(g > 0.0)) g = 1.0;
-
-    // Straight-line interpolation of the coefficients, which is safe rather
-    // than merely convenient: the stable region |a2| < 1, |a1| < 1 + a2 is a
-    // triangle, so no point between two stable settings is outside it. See the
-    // header.
-    for (int i = 0; i < kStages; i++) {
-        Biquad       & a = m_active[i];
-        const Biquad & t = m_cfg.stage[i];
-
-        a.b0 += (t.b0 - a.b0) * g;
-        a.b1 += (t.b1 - a.b1) * g;
-        a.b2 += (t.b2 - a.b2) * g;
-        a.a1 += (t.a1 - a.a1) * g;
-        a.a2 += (t.a2 - a.a2) * g;
-    }
-
-    m_gain += (m_cfg.outputGain - m_gain) * g;
+    return g;
 }
 
 
@@ -445,48 +438,524 @@ void Channel::checkSettled()
 }
 
 
-double Channel::runStage(int index, double x)
+namespace {
+
+//! +0.0 and nothing else; -0.0 compares equal to it and does not behave like it.
+inline bool isPlusZero(double v)
 {
-    const Biquad & b = m_active[index];
-    double       * z = m_z[index];
-
-    // Transposed direct form II: two state words per stage, and the state is
-    // the filter's memory of the input rather than of the output, which is what
-    // keeps it well behaved while the coefficients are moving.
-    double y = b.b0 * x + z[0];
-
-    z[0] = b.b1 * x - b.a1 * y + z[1];
-    z[1] = b.b2 * x - b.a2 * y;
-
-    return y;
+    uint64_t bits;
+    memcpy(&bits, &v, sizeof(bits));
+    return bits == 0;
 }
+
+//! True if a stage, as it stands, passes its input through untouched: unity in
+//! front, and a numerator that is the denominator. That is not only a stage
+//! switched off - the cookbook shelf and bell come out exactly like this at
+//! 0 dB, because A is then exactly 1. With its state at zero such a stage
+//! computes y = x + 0 and leaves the state at zero, so it can be left out of the
+//! loop altogether, as long as the + 0 is kept: it turns -0 into +0, and that is
+//! all the stage does.
+//!
+//! All but exact where b1 * x - a1 * y is two rounded products, which is every
+//! x86 build: the one difference is that a run of negative zeros into a band
+//! above a quarter of the sample rate could bring a zero out with the other
+//! sign. Where the compiler fuses the products - clang on AArch64 - the stage
+//! was adding the rounding error of b1 * x to its state, about 1e-16 of the
+//! signal, and a skipped one no longer does.
+inline bool passesThrough(const Biquad & b, const double * z)
+{
+    return b.b0 == 1.0 && b.b1 == b.a1 && b.b2 == b.a2
+        && isPlusZero(z[0]) && isPlusZero(z[1]);
+}
+
+//! A settled block through the N stages that do something. `pre[k]` is added in
+//! front of the k-th of them, and pre[N] after the last: +0.0 where stages were
+//! left out in that place, which is exactly what they would have done, and -0.0
+//! elsewhere, which does nothing at all to any value.
+//!
+//! The states are copies for the length of the block, so that no compiler has
+//! to wonder whether a write to `io` changes them - with double samples none can
+//! rule it out, and MSVC never tries - and keep them in memory, with a
+//! store-to-load forward on every stage's recursion.
+template<int N, typename Sample>
+void runSettled(Sample * p, size_t frames, size_t stride, const Biquad * stage,
+                double (*state)[2], const double * pre, double gain)
+{
+    Biquad b[N > 0 ? N : 1];
+    double z[N > 0 ? N : 1][2];
+    double add[N + 1];
+    for (int s = 0; s < N; s++) {
+        b[s]    = stage[s];
+        z[s][0] = state[s][0];
+        z[s][1] = state[s][1];
+    }
+    for (int s = 0; s <= N; s++) add[s] = pre[s];
+
+    size_t i = 0;
+    while (i < frames) {
+        for (; i < frames; i++) {
+            double x = (double)*p;
+
+            for (int s = 0; s < N; s++) {
+                // With every stage in, there is nothing to add.
+                if (N < kStages) x = x + add[s];
+                // Transposed direct form II, as in the gliding loop.
+                const double y = b[s].b0 * x + z[s][0];
+                z[s][0] = b[s].b1 * x - b[s].a1 * y + z[s][1];
+                z[s][1] = b[s].b2 * x - b[s].a2 * y;
+                x = y;
+            }
+            if (N < kStages) x = x + add[N];
+
+            if (!sane(x)) break;
+
+            *p = (Sample)(x * gain);
+            p += stride;
+        }
+
+        if (i < frames) {
+            // A non-finite sample would live in the states for the rest of the
+            // stream, so it stops here rather than being passed on. Out of the
+            // loop rather than in it: inside, clang on AArch64 makes the reset
+            // a select on every state every sample, and every stage's recursion
+            // then waits for the end of the cascade.
+            memset(z, 0, sizeof(z));
+            *p = (Sample)(0.0 * gain);
+            p += stride;
+            i++;
+        }
+    }
+
+    for (int s = 0; s < N; s++) {
+        state[s][0] = z[s][0];
+        state[s][1] = z[s][1];
+    }
+}
+
+} // anonymous namespace
 
 
 template<typename Sample>
 void Channel::runBlock(Sample * io, size_t frames, size_t stride, bool gliding)
 {
+    if (!gliding) {
+        // Gather the stages that do something, and note where the ones that do
+        // not were - see passesThrough().
+        Biquad stage[kStages];
+        double state[kStages][2];
+        int    from[kStages];
+        double pre[kStages + 1];
+        int n = 0;
+        pre[0] = -0.0;
+        for (int s = 0; s < kStages; s++) {
+            if (passesThrough(m_active[s], m_z[s])) {
+                pre[n] = 0.0;
+                continue;
+            }
+            stage[n]    = m_active[s];
+            state[n][0] = m_z[s][0];
+            state[n][1] = m_z[s][1];
+            from[n]     = s;
+            pre[++n]    = -0.0;
+        }
+
+        switch (n) {
+        case 0: runSettled<0>(io, frames, stride, stage, state, pre, m_gain); break;
+        case 1: runSettled<1>(io, frames, stride, stage, state, pre, m_gain); break;
+        case 2: runSettled<2>(io, frames, stride, stage, state, pre, m_gain); break;
+        case 3: runSettled<3>(io, frames, stride, stage, state, pre, m_gain); break;
+        case 4: runSettled<4>(io, frames, stride, stage, state, pre, m_gain); break;
+        case 5: runSettled<5>(io, frames, stride, stage, state, pre, m_gain); break;
+        default: runSettled<6>(io, frames, stride, stage, state, pre, m_gain); break;
+        }
+
+        // A stage left out had a zero state and still has, blow-up or not.
+        for (int k = 0; k < n; k++) {
+            m_z[from[k]][0] = state[k][0];
+            m_z[from[k]][1] = state[k][1];
+        }
+        return;
+    }
+
+    // Gliding: every stage, every sample, the coefficients a step nearer their
+    // targets each time. The same copies as above, for the same reason.
+    Biquad b[kStages];
+    double z[kStages][2];
+    for (int s = 0; s < kStages; s++) {
+        b[s]    = m_active[s];
+        z[s][0] = m_z[s][0];
+        z[s][1] = m_z[s][1];
+    }
+    double gain = m_gain;
+
+    const double g = glideFraction();
+
     Sample *p = io;
 
-    for (size_t i = 0; i < frames; i++) {
-        if (gliding) glideStep();
+    size_t i = 0;
+    while (i < frames) {
+        for (; i < frames; i++) {
+            for (int s = 0; s < kStages; s++) {
+                const Biquad & t = m_cfg.stage[s];
+                b[s].b0 += (t.b0 - b[s].b0) * g;
+                b[s].b1 += (t.b1 - b[s].b1) * g;
+                b[s].b2 += (t.b2 - b[s].b2) * g;
+                b[s].a1 += (t.a1 - b[s].a1) * g;
+                b[s].a2 += (t.a2 - b[s].a2) * g;
+            }
+            gain += (m_cfg.outputGain - gain) * g;
 
-        double x = (double)*p;
+            double x = (double)*p;
 
+            for (int s = 0; s < kStages; s++) {
+                // Transposed direct form II: two state words per stage, and the
+                // state is the filter's memory of the input rather than of the
+                // output, which is what keeps it well behaved while the
+                // coefficients are moving.
+                const double y = b[s].b0 * x + z[s][0];
+                z[s][0] = b[s].b1 * x - b[s].a1 * y + z[s][1];
+                z[s][1] = b[s].b2 * x - b[s].a2 * y;
+                x = y;
+            }
+
+            if (!sane(x)) break;
+
+            *p = (Sample)(x * gain);
+            p += stride;
+        }
+
+        if (i < frames) {
+            // As in runSettled(), and out of the loop for the same reason.
+            memset(z, 0, sizeof(z));
+            *p = (Sample)(0.0 * gain);
+            p += stride;
+            i++;
+        }
+    }
+
+    for (int s = 0; s < kStages; s++) {
+        m_active[s] = b[s];
+        m_z[s][0]   = z[s][0];
+        m_z[s][1]   = z[s][1];
+    }
+    m_gain = gain;
+}
+
+
+// ---------------------------------------------------------------------------
+// Two channels at once
+// ---------------------------------------------------------------------------
+
+namespace {
+
+//! Two channels' samples, one to a lane, and one section's step over both. The
+//! arithmetic is runSettled()'s, in its order, a lane per channel; each lane is
+//! rounded exactly as the single channel loop rounds it.
+//!
+//! On x86 that is an SSE2 register, so a stage costs one channel's
+//! instructions. Elsewhere it is two copies of the very expression the single
+//! channel loop uses - spelled out per lane rather than through operators, so
+//! that a compiler which fuses multiply-adds within an expression, as clang on
+//! AArch64 does, fuses each lane exactly as it fuses that loop.
+#if PARAEQ_SSE2
+typedef __m128d Pair;
+
+inline Pair pairOf(double a, double b) { return _mm_set_pd(b, a); }
+inline void pairGet(Pair p, double * out) { _mm_storeu_pd(out, p); }
+inline Pair pairAdd(Pair p, double k) { return _mm_add_pd(p, _mm_set1_pd(k)); }
+inline void pairClear(Pair & p, int lane)
+{
+    p = lane ? _mm_unpacklo_pd(p, _mm_setzero_pd()) : _mm_move_sd(p, _mm_setzero_pd());
+}
+inline void pairSplit(Pair p, double & a, double & b)
+{
+    double v[2];
+    _mm_storeu_pd(v, p);
+    a = v[0];
+    b = v[1];
+}
+
+inline Pair pairStep(const Biquad & b, Pair x, Pair & z0, Pair & z1)
+{
+    const Pair y = _mm_add_pd(_mm_mul_pd(_mm_set1_pd(b.b0), x), z0);
+    z0 = _mm_add_pd(_mm_sub_pd(_mm_mul_pd(_mm_set1_pd(b.b1), x),
+                               _mm_mul_pd(_mm_set1_pd(b.a1), y)), z1);
+    z1 = _mm_sub_pd(_mm_mul_pd(_mm_set1_pd(b.b2), x),
+                    _mm_mul_pd(_mm_set1_pd(b.a2), y));
+    return y;
+}
+#else
+struct Pair { double v[2]; };
+
+inline Pair pairOf(double a, double b) { Pair p; p.v[0] = a; p.v[1] = b; return p; }
+inline void pairGet(Pair p, double * out) { out[0] = p.v[0]; out[1] = p.v[1]; }
+inline Pair pairAdd(Pair p, double k) { p.v[0] = p.v[0] + k; p.v[1] = p.v[1] + k; return p; }
+inline void pairClear(Pair & p, int lane) { p.v[lane] = 0.0; }
+inline void pairSplit(Pair p, double & a, double & b) { a = p.v[0]; b = p.v[1]; }
+
+inline Pair pairStep(const Biquad & b, Pair x, Pair & z0, Pair & z1)
+{
+    Pair y;
+    for (int c = 0; c < 2; c++) {
+        y.v[c] = b.b0 * x.v[c] + z0.v[c];
+        z0.v[c] = b.b1 * x.v[c] - b.a1 * y.v[c] + z1.v[c];
+        z1.v[c] = b.b2 * x.v[c] - b.a2 * y.v[c];
+    }
+    return y;
+}
+#endif
+
+//! Stages S..N-1 of the cascade over both lanes. A recursion rather than a loop
+//! so that every state is indexed by a constant: left as a loop, clang on
+//! AArch64 declines to unroll six stages and keeps the states in memory, with a
+//! store-to-load forward on every recursion.
+template<int S, int N, bool kAdd>
+struct PairCascade {
+    static inline Pair run(const Biquad * b, const double * add, Pair x,
+                           Pair * z0, Pair * z1)
+    {
+        if (kAdd) x = pairAdd(x, add[S]);
+        x = pairStep(b[S], x, z0[S], z1[S]);
+        return PairCascade<S + 1, N, kAdd>::run(b, add, x, z0, z1);
+    }
+};
+
+template<int N, bool kAdd>
+struct PairCascade<N, N, kAdd> {
+    static inline Pair run(const Biquad *, const double * add, Pair x, Pair *, Pair *)
+    {
+        if (kAdd) x = pairAdd(x, add[N]);
+        return x;
+    }
+};
+
+//! runSettled() for two channels, or with kGlide the gliding loop in
+//! runBlock(): the coefficients step once a sample and both channels run on the
+//! result, which is what each would have computed for itself.
+template<int N, bool kGlide, typename Sample>
+void runPairKernel(Sample * pa, Sample * pb, size_t frames, size_t stride,
+                   Biquad * bq, const Biquad * target, double g,
+                   double (*za)[2], double (*zb)[2], const double * pre,
+                   double & gainIo, double targetGain)
+{
+    Biquad b[N > 0 ? N : 1];
+    Pair z0[N > 0 ? N : 1], z1[N > 0 ? N : 1];
+    double add[N + 1];
+    for (int s = 0; s < N; s++) {
+        b[s]  = bq[s];
+        z0[s] = pairOf(za[s][0], zb[s][0]);
+        z1[s] = pairOf(za[s][1], zb[s][1]);
+    }
+    for (int s = 0; s <= N; s++) add[s] = kGlide ? -0.0 : pre[s];
+    double gain = gainIo;
+
+    double v[2] = { 0.0, 0.0 };
+    size_t i = 0;
+    while (i < frames) {
+        for (; i < frames; i++) {
+            if (kGlide) {
+                for (int s = 0; s < N; s++) {
+                    const Biquad & t = target[s];
+                    b[s].b0 += (t.b0 - b[s].b0) * g;
+                    b[s].b1 += (t.b1 - b[s].b1) * g;
+                    b[s].b2 += (t.b2 - b[s].b2) * g;
+                    b[s].a1 += (t.a1 - b[s].a1) * g;
+                    b[s].a2 += (t.a2 - b[s].a2) * g;
+                }
+                gain += (targetGain - gain) * g;
+            }
+
+            // With every stage in, there is nothing to add.
+            const Pair x = PairCascade<0, N, !kGlide && N < kStages>::run(
+                b, add, pairOf((double)*pa, (double)*pb), z0, z1);
+
+            pairGet(x, v);
+            if (!sane(v[0]) || !sane(v[1])) break;
+
+            *pa = (Sample)(v[0] * gain);
+            *pb = (Sample)(v[1] * gain);
+            pa += stride;
+            pb += stride;
+        }
+
+        if (i < frames) {
+            // A blow-up in one channel or both. Each that blew up loses its
+            // state and is silenced, as runSettled() does it; the other's
+            // sample is good and goes out.
+            for (int c = 0; c < 2; c++) {
+                Sample * const p = c ? pb : pa;
+                if (sane(v[c])) {
+                    *p = (Sample)(v[c] * gain);
+                    continue;
+                }
+                for (int s = 0; s < N; s++) {
+                    pairClear(z0[s], c);
+                    pairClear(z1[s], c);
+                }
+                *p = (Sample)(0.0 * gain);
+            }
+            pa += stride;
+            pb += stride;
+            i++;
+        }
+    }
+
+    for (int s = 0; s < N; s++) {
+        pairSplit(z0[s], za[s][0], zb[s][0]);
+        pairSplit(z1[s], za[s][1], zb[s][1]);
+        if (kGlide) bq[s] = b[s];
+    }
+    gainIo = gain;
+}
+
+} // anonymous namespace
+
+
+bool Channel::lockstep(const Channel & o) const
+{
+    // Bitwise, so a -0.0 against a +0.0 is a difference: either can decide a
+    // sign of zero somewhere downstream.
+    if (m_settled != o.m_settled) return false;
+    if (memcmp(m_active, o.m_active, sizeof(m_active)) != 0) return false;
+    if (memcmp(&m_gain, &o.m_gain, sizeof(m_gain)) != 0) return false;
+
+    // Gliding, both have to be heading to the same place at the same rate.
+    if (!m_settled) {
+        return memcmp(m_cfg.stage, o.m_cfg.stage, sizeof(m_cfg.stage)) == 0
+            && memcmp(&m_cfg.outputGain, &o.m_cfg.outputGain, sizeof(double)) == 0
+            && memcmp(&m_cfg.glide, &o.m_cfg.glide, sizeof(double)) == 0;
+    }
+
+    // Settled, both have to leave out the same stages.
+    for (int s = 0; s < kStages; s++) {
+        if (passesThrough(m_active[s], m_z[s]) != passesThrough(o.m_active[s], o.m_z[s]))
+            return false;
+    }
+    return true;
+}
+
+
+template<typename Sample>
+void Channel::runPair(Channel & a, Sample * ioA, Channel & b, Sample * ioB,
+                      size_t frames, size_t stride, bool gliding)
+{
+    double gain = a.m_gain;
+
+    if (!gliding) {
+        // runBlock()'s gathering, done once for both: lockstep() has made sure
+        // the same stages pass through in each.
+        Biquad stage[kStages];
+        double za[kStages][2], zb[kStages][2];
+        int    from[kStages];
+        double pre[kStages + 1];
+        int n = 0;
+        pre[0] = -0.0;
         for (int s = 0; s < kStages; s++) {
-            x = runStage(s, x);
+            if (passesThrough(a.m_active[s], a.m_z[s])) {
+                pre[n] = 0.0;
+                continue;
+            }
+            stage[n] = a.m_active[s];
+            za[n][0] = a.m_z[s][0]; za[n][1] = a.m_z[s][1];
+            zb[n][0] = b.m_z[s][0]; zb[n][1] = b.m_z[s][1];
+            from[n]  = s;
+            pre[++n] = -0.0;
         }
 
-        if (!sane(x)) {
-            // A non-finite sample would live in the states for the rest of the
-            // stream, so it stops here rather than being passed on.
-            memset(m_z, 0, sizeof(m_z));
-            x = 0.0;
+        // With nothing to run there is no recursion to hide, and the
+        // single channel loop does less per sample.
+        if (n == 0) {
+            a.runBlock(ioA, frames, stride, false);
+            b.runBlock(ioB, frames, stride, false);
+            return;
         }
 
-        *p = (Sample)(x * m_gain);
-        p += stride;
+#define PARAEQ_PAIR(K) runPairKernel<K, false>(ioA, ioB, frames, stride, stage, stage, 0.0, \
+                                               za, zb, pre, gain, gain)
+        switch (n) {
+        case 1: PARAEQ_PAIR(1); break;
+        case 2: PARAEQ_PAIR(2); break;
+        case 3: PARAEQ_PAIR(3); break;
+        case 4: PARAEQ_PAIR(4); break;
+        case 5: PARAEQ_PAIR(5); break;
+        default: PARAEQ_PAIR(6); break;
+        }
+#undef PARAEQ_PAIR
+
+        for (int k = 0; k < n; k++) {
+            a.m_z[from[k]][0] = za[k][0]; a.m_z[from[k]][1] = za[k][1];
+            b.m_z[from[k]][0] = zb[k][0]; b.m_z[from[k]][1] = zb[k][1];
+        }
+        return;
+    }
+
+    Biquad bq[kStages];
+    double za[kStages][2], zb[kStages][2];
+    for (int s = 0; s < kStages; s++) {
+        bq[s] = a.m_active[s];
+        za[s][0] = a.m_z[s][0]; za[s][1] = a.m_z[s][1];
+        zb[s][0] = b.m_z[s][0]; zb[s][1] = b.m_z[s][1];
+    }
+
+    runPairKernel<kStages, true>(ioA, ioB, frames, stride, bq, a.m_cfg.stage,
+                                 a.glideFraction(), za, zb, NULL, gain,
+                                 a.m_cfg.outputGain);
+
+    for (int s = 0; s < kStages; s++) {
+        a.m_active[s] = bq[s];
+        b.m_active[s] = bq[s];
+        a.m_z[s][0] = za[s][0]; a.m_z[s][1] = za[s][1];
+        b.m_z[s][0] = zb[s][0]; b.m_z[s][1] = zb[s][1];
+    }
+    a.m_gain = gain;
+    b.m_gain = gain;
+}
+
+
+template<typename Sample>
+void Channel::processPair(Channel & a, Sample * ioA, Channel & b, Sample * ioB,
+                          size_t frames, size_t stride)
+{
+    if (!ioA || !ioB || !stride || &a == &b) {
+        a.process(ioA, frames, stride);
+        b.process(ioB, frames, stride);
+        return;
+    }
+
+    // process()'s loop, once for both. Two channels in lockstep stay there - the
+    // same glide checked at the same samples settles both at once - so the
+    // fallback is for a pair that arrives out of step, and it splits at a check
+    // boundary, which is where each channel's own process() would have checked.
+    size_t done = 0;
+    while (done < frames) {
+        Sample * const atA = ioA + done * stride;
+        Sample * const atB = ioB + done * stride;
+
+        if (!a.lockstep(b)) {
+            a.process(atA, frames - done, stride);
+            b.process(atB, frames - done, stride);
+            return;
+        }
+
+        if (a.m_settled) {
+            runPair(a, atA, b, atB, frames - done, stride, false);
+            return;
+        }
+
+        size_t count = frames - done;
+        if (count > (size_t)kSettleCheck) count = (size_t)kSettleCheck;
+
+        runPair(a, atA, b, atB, count, stride, true);
+        a.checkSettled();
+        b.checkSettled();
+
+        done += count;
     }
 }
+
+
+template void Channel::processPair<float>(Channel &, float *, Channel &, float *, size_t, size_t);
+template void Channel::processPair<double>(Channel &, double *, Channel &, double *, size_t, size_t);
 
 
 template<typename Sample>

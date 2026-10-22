@@ -17,6 +17,7 @@
 #import <AVFoundation/AVFoundation.h>
 
 #include <atomic>
+#include <memory>
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -236,7 +237,33 @@ struct DeclickDSP {
     AudioBufferList *lookahead         = NULL;
     UInt32           lookaheadCapacity = 0;
 
+    // Warm start.  A scout (see -embrace_scoutFileURL:) warms a channel of its own
+    // over the opening of the track on a worker thread and leaves what that
+    // learned here, one slot per scout so that a late one cannot overwrite the
+    // slot the render thread is about to read.  `forgetPending` is the scout's
+    // word that a track begins: the render thread then starts every channel
+    // afresh, from the slot if there is one and cold if there is not.
+    declick::WarmState warm[2][sMaxChannels];
+    std::atomic<int>   warmSlot { -1 };
+    std::atomic<bool>  forgetPending { false };
+    std::atomic<long>  scoutGeneration { 0 };
+
     ~DeclickDSP() { freeLookahead(); }
+
+    // Render thread, after update() and ahead of readAhead(), because starting
+    // afresh empties the pipeline and refilling it is the read-ahead's job.
+    void applyTrackStart()
+    {
+        if (!forgetPending.exchange(false, std::memory_order_relaxed) || !configured) return;
+
+        int slot = warmSlot.exchange(-1, std::memory_order_acquire);
+
+        for (int i = 0; i < channels; i++) {
+            // adoptWarm() resets on a state it cannot use, as well as on failing
+            if (slot < 0) channel[i].reset();
+            else          channel[i].adoptWarm(warm[slot][i]);
+        }
+    }
 
     void freeLookahead()
     {
@@ -374,7 +401,112 @@ struct DeclickDSP {
 };
 
 
-@interface DeclickAudioUnit : RestorationAudioUnit
+// Warms a channel per output channel over the opening of a file, as the core
+// does for a host that can read ahead, and saves what it learned into
+// dsp->warm[slot].  Off the main thread.  The core wants Config::warmSeconds() of
+// the audio that is coming, and the file has it.
+//
+// At the file's own rate: the saved state is only good for a channel configured
+// the same way, and the live unit runs at the rate of the audio it is given, so
+// a file that does not match it is left to start cold.  A mono file warms every
+// live channel from its one pass.
+//
+static bool sScoutWarm(NSURL *fileURL, DeclickDSP *dsp, const declick::Params &params,
+                       double liveRate, int liveChannels, int slot,
+                       const std::atomic<long> *generationNow, long generation)
+{
+    static const UInt32 sBlockFrames = 4096;
+
+    HugAudioFile *file = [[HugAudioFile alloc] initWithFileURL:fileURL];
+    if (![file open]) return false;
+
+    double    rate         = [file sampleRate];
+    NSInteger fileChannels = [file channelCount];
+
+    if (fabs(rate - liveRate) > 0.5 || fileChannels < 1 || liveChannels < 1) {
+        [file close];
+        return false;
+    }
+
+    declick::Config cfg;
+    cfg.compute(params, rate);
+
+    SInt64 wanted = (SInt64)(cfg.warmSeconds() * rate);
+
+    std::vector<std::vector<float>> audio((size_t)fileChannels);
+    for (auto &a : audio) a.reserve((size_t)wanted);
+
+    AudioBufferList *bufferList = HugAudioBufferListCreate((UInt32)fileChannels, sBlockFrames, YES);
+    if (!bufferList) {
+        [file close];
+        return false;
+    }
+
+    SInt64 read = 0;
+
+    while (read < wanted) {
+        UInt32 frames = sBlockFrames;
+        if ((SInt64)frames > (wanted - read)) frames = (UInt32)(wanted - read);
+
+        for (UInt32 i = 0; i < bufferList->mNumberBuffers; i++) {
+            bufferList->mBuffers[i].mDataByteSize = frames * sizeof(float);
+        }
+
+        if (![file readFrames:&frames intoBufferList:bufferList]) break;
+        if (frames == 0) break;
+
+        // Another track started; whatever this finds is already stale
+        if (generationNow->load(std::memory_order_relaxed) != generation) {
+            HugAudioBufferListFree(bufferList, YES);
+            [file close];
+            return false;
+        }
+
+        for (UInt32 c = 0; c < bufferList->mNumberBuffers && c < audio.size(); c++) {
+            const float *source = (const float *)bufferList->mBuffers[c].mData;
+            audio[c].insert(audio[c].end(), source, source + frames);
+        }
+
+        read += frames;
+    }
+
+    HugAudioBufferListFree(bufferList, YES);
+    [file close];
+
+    if (read == 0) return false;
+
+    std::vector<char> savedStorage((size_t)liveChannels, 0);
+    char *saved = savedStorage.data();
+
+    // A thread a channel of the file, as far as the cores go.  The engine runs the
+    // unit in stereo, so a mono file feeds every live channel the same audio: warm
+    // it once and save that into each.
+    size_t distinct = std::min((size_t)liveChannels, audio.size());
+
+    dispatch_apply(distinct, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^(size_t c) {
+        declick::scoped_flush_denormals ftz;
+
+        const std::vector<float> &in = audio[c];
+
+        std::unique_ptr<declick::Channel> channel(new declick::Channel());
+        channel->configure(cfg);
+        channel->beginWarm();
+        channel->push(in.data(), in.size(), 1);
+        channel->endWarm();
+
+        for (size_t live = c; live < (size_t)liveChannels; live++) {
+            if (std::min(live, audio.size() - 1) != c) continue;
+            saved[live] = channel->saveWarm(dsp->warm[slot][live]) ? 1 : 0;
+        }
+    });
+
+    for (char ok : savedStorage) if (!ok) return false;
+
+    return true;
+}
+
+
+@interface DeclickAudioUnit : RestorationAudioUnit <EmbraceTrackScouting>
 @end
 
 
@@ -404,9 +536,10 @@ struct DeclickDSP {
 {
     return @[
         NSLocalizedString(@"How readily a sample is called a click. The default puts the trigger at "
-            "3.2 sigma above the local noise estimate. 0.7 measures marginally better against injected "
-            "crackle, but 0.8 won the listening comparison on full shellac transfers, with no music "
-            "audible in what it removes. Higher catches more, at the cost of flagging music as damage.", nil),
+            "2.85 sigma above the local noise estimate. A detection that only just crosses it is "
+            "repaired in part, not in full, which is what lets 0.9 reach the small clicks that 0.8 "
+            "did and take less from clean records. Higher catches more, at the cost of flagging "
+            "music as damage.", nil),
 
         NSLocalizedString(@"How far each detection spreads outwards into the tail of the click. "
             "Higher repairs more of the decay; too high starts replacing good audio either side of it.", nil),
@@ -439,6 +572,72 @@ struct DeclickDSP {
 
 - (void) createDSP  { _dsp = new DeclickDSP(); }
 - (void) destroyDSP { delete _dsp; _dsp = NULL; }
+
+
+// A track is about to start.  Its opening seconds are warmed first, off the
+// render thread, so that the key and the crackle floor are the ones the track
+// has once those seconds are in rather than the empty ones a cold start has.
+// The Player is waiting on this, a fraction of a second for stereo, in the way
+// foobar2000's warm start stalls a track's start.  Whatever goes wrong, the
+// track starts cold: the same as it would without any of this.
+//
+- (void) embrace_scoutFileURL:(NSURL *)fileURL
+{
+    DeclickDSP *dsp = _dsp;
+
+    long generation = dsp->scoutGeneration.fetch_add(1, std::memory_order_relaxed) + 1;
+    dsp->warmSlot.store(-1, std::memory_order_relaxed);
+
+    if (!fileURL || !dsp->configured) {
+        dsp->forgetPending.store(true, std::memory_order_relaxed);
+        return;
+    }
+
+    declick::Params p        = dsp->paramsFrom([self state]);
+    double          rate     = dsp->sampleRate;
+    int             channels = dsp->channels;
+    int             slot     = (int)(generation & 1);
+
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+
+    // self is captured strongly on purpose: it keeps the DSP alive for the scout
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        bool ok = sScoutWarm(fileURL, dsp, p, rate, channels, slot, &dsp->scoutGeneration, generation);
+
+        // Whoever moves the generation on first decides: this, or a caller that
+        // gave up waiting, whose track has started cold by now
+        long expected = generation;
+
+        if (ok && dsp->scoutGeneration.compare_exchange_strong(expected, generation + 1)) {
+            dsp->warmSlot.store(slot, std::memory_order_release);
+            dsp->forgetPending.store(true, std::memory_order_relaxed);
+            EmbraceLog(@"Declick", @"warmed on %@", [fileURL lastPathComponent]);
+        }
+
+        (void)self;
+        dispatch_semaphore_signal(done);
+    });
+
+    if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) != 0) {
+        long expected = generation;
+
+        if (dsp->scoutGeneration.compare_exchange_strong(expected, generation + 1)) {
+            EmbraceLog(@"Declick", @"warm start of %@ took too long, starting cold", [fileURL lastPathComponent]);
+            dsp->forgetPending.store(true, std::memory_order_relaxed);
+        } else {
+            // The scout won the race and is publishing
+            dispatch_semaphore_wait(done, DISPATCH_TIME_FOREVER);
+        }
+        return;
+    }
+
+    // Finished without publishing: failed, or went stale.  Cold.
+    if (dsp->warmSlot.load(std::memory_order_relaxed) < 0 && dsp->scoutGeneration.load(std::memory_order_relaxed) == generation) {
+        long expected = generation;
+        dsp->scoutGeneration.compare_exchange_strong(expected, generation + 1);
+        dsp->forgetPending.store(true, std::memory_order_relaxed);
+    }
+}
 
 
 - (void) configureDSPWithSampleRate:(double)sampleRate channels:(int)channels
@@ -487,6 +686,7 @@ struct DeclickDSP {
         // Ahead of the read-ahead, because a Model Order change empties the
         // pipeline and refilling it is the read-ahead's job.
         dsp->update(state);
+        dsp->applyTrackStart();
 
         err = dsp->readAhead(frameCount, timestamp, pullInputBlock);
         if (err) return err;
@@ -618,10 +818,16 @@ struct DehumDSP {
     void process(AudioBufferList *bufferList, AUAudioFrameCount frames)
     {
         int count = std::min((int)bufferList->mNumberBuffers, channels);
+        int i = 0;
 
-        for (int i = 0; i < count; i++) {
-            channel[i].process((float *)bufferList->mBuffers[i].mData, frames, 1);
+        // Two at a time: bit for bit the same as one after the other, but faster
+        for (; i + 1 < count; i += 2) {
+            dehum::Channel::processPair(channel[i],     (float *)bufferList->mBuffers[i].mData,
+                                        channel[i + 1], (float *)bufferList->mBuffers[i + 1].mData,
+                                        frames, 1);
         }
+
+        if (i < count) channel[i].process((float *)bufferList->mBuffers[i].mData, frames, 1);
     }
 };
 

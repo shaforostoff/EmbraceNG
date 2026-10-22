@@ -28,8 +28,18 @@
  *     stage. Gain, frequency and Q obviously do; so do the two shelf/bell
  *     switches and the high-pass slope, because a stage that is off is a unity
  *     biquad rather than a stage that is skipped. One glide mechanism therefore
- *     covers every control, including the discrete ones, and the count of
- *     biquads actually run never changes.
+ *     covers every control, including the discrete ones, and while anything is
+ *     gliding every biquad runs.
+ *
+ *     Once settled, a stage that passes its input straight through - switched
+ *     off, or a shelf or bell at exactly 0 dB, which the cookbook designs with
+ *     a numerator equal to its denominator - is left out of the loop while its
+ *     state is zero. Such a stage computes x + 0 and leaves a zero state at
+ *     zero, so on x86 this is what running it did, bar the sign of a zero in
+ *     one corner; where the compiler fuses multiply-adds it was adding rounding
+ *     noise 300 dB down, and now does not - see passesThrough(). A flat
+ *     equaliser costs next to nothing, and one with two bands in use costs two
+ *     biquads.
  *
  *     That glide is on the coefficients, not on the controls, and it runs per
  *     sample. Per sub-block was the first attempt and it is audible: a jump in
@@ -87,7 +97,8 @@ enum {
     //! Biquads per channel, in cascade order: two for the high-pass, then the
     //! low shelf, the two peaking bands and the high shelf. The high-pass is
     //! two stages because 24 dB/oct needs two; at 12 dB/oct and at off the
-    //! spare one is unity. The count never varies - see the header note.
+    //! spare one is unity. The count never varies - see the header note -
+    //! though a settled equaliser leaves out the ones doing nothing.
     kStages = 6,
 
     kStageHighPass1 = 0,
@@ -250,12 +261,6 @@ struct Config {
                                 //!< per sample
 
     void compute(const Params & p, double sampleRate);
-
-    //! Always true. Nothing here is sized by the parameters or by the sample
-    //! rate, so every change - a sample rate change included - can be retuned
-    //! into a running Channel. Kept for symmetry with the sibling cores, whose
-    //! callers branch on it.
-    bool structurallyEquals(const Config &) const { return true; }
 };
 
 //! Flush-to-zero for the duration of a scope. The biquad states are recursions
@@ -300,17 +305,32 @@ public:
     void flush();
 
     //! Point the glide at a new target, keeping filter state and keeping the
-    //! active coefficients where they are. Never fails - see
-    //! Config::structurallyEquals - and never allocates, so a render thread may
-    //! call it on every block.
-    bool retune(const Config & cfg);
+    //! active coefficients where they are. Nothing here is sized by the
+    //! parameters or by the sample rate, so every change - a sample rate change
+    //! included - can be retuned in: this never fails and never allocates, and
+    //! a render thread may call it on every block.
+    void retune(const Config & cfg);
 
     //! In place, interleaved by `stride`. Zero latency: what goes in comes out,
     //! same count, same alignment.
     template<typename Sample>
     void process(Sample * io, size_t frames, size_t stride);
 
-    const Config & config() const { return m_cfg; }
+    //! Two channels at once: `a` over `ioA` and `b` over `ioB`, both interleaved
+    //! by `stride` - the two halves of a stereo buffer, or two planar ones. Bit
+    //! for bit what a.process(ioA, ...) and then b.process(ioB, ...) would give.
+    //!
+    //! What it buys is time. Every biquad is a recursion, and its latency rather
+    //! than its arithmetic sets the pace - a cascade costs about the same at two
+    //! stages as at six - so one channel leaves the core mostly waiting. Two
+    //! channels' recursions are independent and run side by side for little more
+    //! than one costs. That takes the two in lockstep, which they are whenever
+    //! they were configured and retuned together; when they are not - one
+    //! gliding and the other settled, or a stage passing through in one only -
+    //! this is exactly those two calls.
+    template<typename Sample>
+    static void processPair(Channel & a, Sample * ioA, Channel & b, Sample * ioB,
+                            size_t frames, size_t stride);
 
     //! True once the active coefficients have reached the target, i.e. nothing
     //! is gliding. process() takes a cheaper path in that state, which is the
@@ -320,19 +340,22 @@ public:
     //! than the kGlideSec the ear hears.
     bool settled() const { return m_settled; }
 
-    //! The coefficients actually in use, which lag the target during a glide.
-    const Biquad & activeStage(int index) const { return m_active[index]; }
-
     size_t heapBytes() const { return 0; }
 
 private:
     void   snap();
-    void   glideStep();
+    double glideFraction() const;
     void   checkSettled();
-    double runStage(int index, double x);
 
     template<typename Sample>
     void   runBlock(Sample * io, size_t frames, size_t stride, bool gliding);
+
+    //! True if `o` would run the same coefficients, the same stages and the same
+    //! glide as this channel - see processPair().
+    bool   lockstep(const Channel & o) const;
+    template<typename Sample>
+    static void runPair(Channel & a, Sample * ioA, Channel & b, Sample * ioB,
+                        size_t frames, size_t stride, bool gliding);
 
     Config m_cfg;
     Biquad m_active[kStages];

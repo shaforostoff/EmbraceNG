@@ -164,10 +164,16 @@ struct ParametricEQDSP {
     void process(AudioBufferList *bufferList, AUAudioFrameCount frames)
     {
         int count = std::min((int)bufferList->mNumberBuffers, channels);
+        int i = 0;
 
-        for (int i = 0; i < count; i++) {
-            channel[i].process((float *)bufferList->mBuffers[i].mData, frames, 1);
+        // Two at a time: the recursions are independent, so they overlap
+        for (; i + 1 < count; i += 2) {
+            paraeq::Channel::processPair(channel[i],     (float *)bufferList->mBuffers[i].mData,
+                                         channel[i + 1], (float *)bufferList->mBuffers[i + 1].mData,
+                                         frames, 1);
         }
+
+        if (i < count) channel[i].process((float *)bufferList->mBuffers[i].mData, frames, 1);
     }
 };
 
