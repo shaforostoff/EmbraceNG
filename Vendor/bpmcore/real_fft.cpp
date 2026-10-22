@@ -4,6 +4,13 @@
 #include <cstring>
 #include <initializer_list>
 
+// The same test odf.cpp and resample.cpp make: SSE2 is the x64 baseline and
+// the 32-bit Windows build asks for it.
+#if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
+#include <emmintrin.h>
+#define BPMCORE_WINDOW_SSE2
+#endif
+
 #if defined(BPMCORE_FFT_PFFFT)
 #include <pffft/pffft.h>
 #else
@@ -22,6 +29,42 @@ namespace
 		for (int f : { 2, 3, 5 }) while (n % f == 0) n /= f;
 		return n == 1;
 	}
+
+#if defined(BPMCORE_WINDOW_SSE2)
+	//! Four products, rounded to float.
+	inline void window_four(const float * src, const double * w, float * out)
+	{
+		const __m128 x = _mm_loadu_ps(src);
+		const __m128d lo = _mm_mul_pd(_mm_cvtps_pd(x), _mm_loadu_pd(w));
+		const __m128d hi = _mm_mul_pd(_mm_cvtps_pd(_mm_movehl_ps(x, x)), _mm_loadu_pd(w + 2));
+		_mm_storeu_ps(out, _mm_movelh_ps(_mm_cvtpd_ps(lo), _mm_cvtpd_ps(hi)));
+	}
+
+	//! Four products, left at double.
+	inline void window_four(const float * src, const double * w, double * out)
+	{
+		const __m128 x = _mm_loadu_ps(src);
+		_mm_storeu_pd(out, _mm_mul_pd(_mm_cvtps_pd(x), _mm_loadu_pd(w)));
+		_mm_storeu_pd(out + 2, _mm_mul_pd(_mm_cvtps_pd(_mm_movehl_ps(x, x)),
+		                                  _mm_loadu_pd(w + 2)));
+	}
+#endif
+}
+
+void real_fft::window_from(const float * src, const double * window)
+{
+	fft_scalar * const out = m_in;
+	const int n = m_nfft;
+	int i = 0;
+#if defined(BPMCORE_WINDOW_SSE2)
+	// Bounded by a count worked out once, rather than by i + 4 <= n: written
+	// that way the 32-bit build kept a second counter for i + 4 and, out of
+	// registers, kept it on the stack, so every step waited on a store to
+	// forward from the step before.
+	const int whole = n & ~3;
+	for (; i < whole; i += 4) window_four(src + i, window + i, out + i);
+#endif
+	for (; i < n; i++) out[i] = static_cast<fft_scalar>(src[i] * window[i]);
 }
 
 int fft_size_for(int ideal)

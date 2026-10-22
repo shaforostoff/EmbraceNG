@@ -262,6 +262,39 @@ double max_seconds();
 analysis analyse(const float * mono, std::size_t count, unsigned sample_rate,
                  listener * l = nullptr, const options * opt = nullptr);
 
+//! What an audio fingerprint is made of: the pitch content over time and the
+//! onsets, with the tuning offset they were measured against.
+//!
+//! The same two spectral passes the analysis makes, kept frame by frame
+//! instead of reduced to a key and a tempo. The chroma has the tuning offset
+//! taken out already, so two transfers of one recording at different
+//! turntable speeds differ in it only by a stretched time axis - and by a
+//! whole semitone where their offsets fall either side of the +/-50 cent
+//! wrap.
+struct features
+{
+	bool ok = false;           //!< false when the track was too short or had no pitch in it
+	double duration = 0;       //!< seconds of audio analysed
+
+	double tuning_cents = 0;   //!< as key_analysis::tuning_cents
+	double tuning_r = 0;
+
+	double chroma_hop = 0;     //!< seconds between chroma frames
+	//! 12 values a frame, pitch class 0 = C. Zero in the frames quieter than
+	//! `silence`, which were not analysed.
+	std::vector<float> chroma;
+	std::vector<float> loudness;   //!< RMS of each chroma frame
+	float silence = 0;
+
+	double novelty_rate = 0;   //!< novelty frames per second
+	//! Onset strength: the envelope the tempo is tracked on, normalised.
+	std::vector<float> novelty;
+};
+
+//! Features of mono PCM in one call. `threads` as options::threads.
+features extract_features(const float * mono, std::size_t count, unsigned sample_rate,
+                          listener * l = nullptr, int threads = 0);
+
 //! Accumulates audio as a decoder produces it, then analyses the lot.
 //!
 //! The envelope has to be normalised by the track's overall level before it is
@@ -301,6 +334,8 @@ public:
 	void add_mono(const double * data, std::size_t count);
 
 	analysis finish(listener * l = nullptr, const options * opt = nullptr);
+	//! The fingerprint features of what was collected, instead of an analysis.
+	features finish_features(listener * l = nullptr, int threads = 0);
 
 	collector(const collector &) = delete;
 	collector & operator=(const collector &) = delete;

@@ -5,7 +5,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <vector>
+
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#endif
 
 // Tuning offset, key, and the retune suggestion that follows from both.
 //
@@ -233,60 +238,163 @@ namespace
 		return correlate12(chroma, rolled);
 	}
 
-	//! Sliding median over a fixed window, advanced one sample at a time.
+	//! Lowest and highest set bit of a word that has one.
+#if defined(_MSC_VER) && !defined(__clang__)
+	int lowest_bit(std::uint32_t x)
+	{
+		unsigned long i;
+		_BitScanForward(&i, x);
+		return static_cast<int>(i);
+	}
+	int highest_bit(std::uint32_t x)
+	{
+		unsigned long i;
+		_BitScanReverse(&i, x);
+		return static_cast<int>(i);
+	}
+#else
+	int lowest_bit(std::uint32_t x) { return __builtin_ctz(x); }
+	int highest_bit(std::uint32_t x) { return 31 - __builtin_clz(x); }
+#endif
+
+	//! Sliding median over one frame's magnitudes, advanced one bin at a time.
 	//!
-	//! This, not the transform, is the expensive part of the stage: 750 medians
-	//! of 101 values for every frame of every track. Keeping the window sorted
-	//! and moving one element per step costs a binary search and a memmove of
-	//! at most half the window, which measured about ten times faster than an
-	//! nth_element per bin.
+	//! This, not the transform, is the expensive part of the stage: some 750
+	//! medians a frame, over windows up to 277 bins wide at the top of the band.
+	//! Keeping the window sorted and moving one element per step still has to
+	//! find two positions and shift what lies between them, which is work in
+	//! proportion to the window on every step.
+	//!
+	//! So the frame is ranked once instead. A radix sort puts every magnitude
+	//! the windows will reach in order, the window becomes a set of ranks held
+	//! as a bitset, and the median is a rank with exactly half the window below
+	//! it. One step takes one rank out and puts one in, which moves that count by
+	//! at most one, so the median moves to at most the neighbouring set bit. Work
+	//! per step no longer depends on the window. Over a 201-second side at
+	//! 44.1kHz the stage measured 2.4 times faster on an M1 and about four times
+	//! on a Haswell, where clang had also left one of the old counting passes
+	//! scalar.
+	//!
+	//! Bit for bit the same median as sorting each window: ties are ranked in bin
+	//! order, which decides which of two equal values is called the median but
+	//! not what its value is.
 	class running_median
 	{
 	public:
-		//! `first` points at `width` values - the window in its starting
-		//! position, which this takes a sorted copy of.
-		void reset(const float * first, int width)
+		//! Ranks `count` values, which every window after this is drawn from.
+		//! Positive floats order the same way their bit patterns do as unsigned
+		//! integers, and every magnitude here is positive.
+		void rank(const float * v, int count)
 		{
-			m_sorted.assign(first, first + width);
-			std::sort(m_sorted.begin(), m_sorted.end());
+			m_values = v;
+			const std::size_t n = static_cast<std::size_t>(count);
+			m_key.resize(n);
+			m_order.resize(n);
+			m_tmp.resize(n);
+			m_rank.resize(n);
+			std::memcpy(m_key.data(), v, n * sizeof *v);
+
+			// Raw pointers, held in locals for the whole sort. Through the
+			// vectors, every store to an int made the compiler reload each
+			// vector's data pointer in case the store had changed it, and the
+			// 32-bit build, out of registers, kept the loop counter on the stack
+			// as well.
+			const std::uint32_t * const key = m_key.data();
+			int * order = m_order.data();
+			int * tmp = m_tmp.data();
+			for (int i = 0; i < count; i++) order[i] = i;
+
+			// Least significant byte first. Each pass is stable, so values that
+			// tie stay in bin order. A pass whose byte is the same everywhere
+			// would leave the order as it was, and is skipped.
+			for (int shift = 0; shift < 32; shift += 8)
+			{
+				int at[256] = { 0 };
+				for (int i = 0; i < count; i++) at[(key[i] >> shift) & 255]++;
+				if (at[(key[0] >> shift) & 255] == count) continue;
+				int sum = 0;
+				for (int b = 0; b < 256; b++) { const int c = at[b]; at[b] = sum; sum += c; }
+				for (int i = 0; i < count; i++)
+				{
+					const int idx = order[i];
+					tmp[at[(key[idx] >> shift) & 255]++] = idx;
+				}
+				std::swap(order, tmp);
+			}
+			// An odd number of passes leaves the order in m_tmp's storage.
+			if (order != m_order.data()) m_order.swap(m_tmp);
+			order = m_order.data();
+			int * const rank_of = m_rank.data();
+			for (int r = 0; r < count; r++) rank_of[order[r]] = r;
+
+			// One spare word, so a search that starts just past the last rank
+			// still reads inside the buffer.
+			m_bits.assign(n / 32 + 2, 0u);
 		}
 
-		float median() const { return m_sorted[m_sorted.size() / 2]; }
-
-		//! Replace `out`, which must be in the window, with `in`.
-		//!
-		//! Both positions are counted rather than searched for. Over a sorted
-		//! window the number of values below `out` is its own index, and the
-		//! number at or below `in` is one past where `in` belongs, so two
-		//! branchless passes give what two binary searches would - and the
-		//! compiler vectorises the passes, which it cannot do with a search.
-		//! Measured 1.8x faster over the real geometry, bit for bit the same
-		//! window afterwards.
-		void slide(float out, float in)
+		//! The window over values [first, first + width), width odd.
+		void reset(int first, int width)
 		{
-			float * const s = m_sorted.data();
-			const int n = static_cast<int>(m_sorted.size());
-			if (in > out)
-			{
-				int i = 0, j = 0;
-				for (int k = 0; k < n; k++) { i += (s[k] < out); j += (s[k] <= in); }
-				--j;
-				// Everything in (i, j] slides down one place and `in` lands at j.
-				for (int k = i; k < j; k++) s[k] = s[k + 1];
-				s[j] = in;
-			}
-			else if (in < out)
-			{
-				int i = 0, j = 0;
-				for (int k = 0; k < n; k++) { i += (s[k] < out); j += (s[k] < in); }
-				for (int k = i; k > j; k--) s[k] = s[k - 1];
-				s[j] = in;
-			}
-			// in == out leaves the window exactly as it was.
+			std::fill(m_bits.begin(), m_bits.end(), 0u);
+			for (int i = first; i < first + width; i++) set(m_rank[i]);
+			m_first = first;
+			m_width = width;
+			m_half = width / 2;
+			m_mid = -1;
+			for (int i = 0; i <= m_half; i++) m_mid = next_set(m_mid);
+		}
+
+		float median() const { return m_values[m_order[m_mid]]; }
+
+		//! Moves the window one value along.
+		void slide()
+		{
+			const int out = m_rank[m_first], in = m_rank[m_first + m_width];
+			m_first++;
+			clear(out);
+			set(in);
+			// How many of the window now rank below the old median.
+			const int below = m_half - (out < m_mid) + (in < m_mid);
+			// The median itself left. Nothing in the window ranks between it
+			// and the next one up, so the count below that is the same count.
+			if (out == m_mid) m_mid = next_set(m_mid);
+			if (below > m_half) m_mid = prev_set(m_mid);
+			else if (below < m_half) m_mid = next_set(m_mid);
 		}
 
 	private:
-		std::vector<float> m_sorted;
+		void set(int r) { m_bits[r >> 5] |= 1u << (r & 31); }
+		void clear(int r) { m_bits[r >> 5] &= ~(1u << (r & 31)); }
+
+		//! The lowest rank in the window above `r`. There always is one where
+		//! this is called.
+		int next_set(int r) const
+		{
+			const int b = r + 1;
+			int w = b >> 5;
+			std::uint32_t x = m_bits[w] & (~0u << (b & 31));
+			while (x == 0) x = m_bits[++w];
+			return (w << 5) + lowest_bit(x);
+		}
+
+		//! The highest rank in the window below `r`, likewise always there.
+		int prev_set(int r) const
+		{
+			const int b = r - 1;
+			int w = b >> 5;
+			std::uint32_t x = m_bits[w] & (~0u >> (31 - (b & 31)));
+			while (x == 0) x = m_bits[--w];
+			return (w << 5) + highest_bit(x);
+		}
+
+		const float * m_values = nullptr;
+		std::vector<std::uint32_t> m_key;   //!< the values' bit patterns
+		std::vector<int> m_order;           //!< value index at each rank
+		std::vector<int> m_tmp;
+		std::vector<int> m_rank;            //!< rank of each value
+		std::vector<std::uint32_t> m_bits;  //!< which ranks are in the window
+		int m_first = 0, m_width = 0, m_half = 0;
+		int m_mid = 0;                      //!< rank of the median
 	};
 
 	//! Half the width of the background window at `bin`, in bins.
@@ -363,9 +471,7 @@ namespace
 		{
 			const key_plan & p = m_plan;
 			const float * src = p.mono + static_cast<std::size_t>(f) * p.hop;
-			fft_scalar * in = m_fft.input();
-			for (int i = 0; i < p.nfft; i++)
-				in[i] = static_cast<fft_scalar>(src[i] * p.window[i]);
+			m_fft.window_from(src, p.window);
 			m_fft.forward();
 
 			// Magnitudes over the search band plus the median's reach either
@@ -387,10 +493,10 @@ namespace
 			// spectrum however steeply the transfer rolls off.
 			//
 			// The neighbourhood is a fixed distance in pitch, so it widens with
-			// frequency. It changes once an octave, and the median is rebuilt
-			// there and slid between - a handful of sorts per frame against the
-			// several hundred slides they save.
+			// frequency. It changes once an octave, and the window is rebuilt
+			// there and slid between, over one ranking of the whole frame.
 			const int span = p.hi - p.lo;
+			m_median.rank(m_ext.data(), p.ext_len);
 			int cur_half = -1;
 			for (int j = 0; j < span; j++)
 			{
@@ -398,12 +504,12 @@ namespace
 				const int centre = p.max_half + j;
 				if (h != cur_half)
 				{
-					m_median.reset(m_ext.data() + centre - h, 2 * h + 1);
+					m_median.reset(centre - h, 2 * h + 1);
 					cur_half = h;
 				}
 				else
 				{
-					m_median.slide(m_ext[centre - h - 1], m_ext[centre + h]);
+					m_median.slide();
 				}
 				m_white[j] = m_ext[centre] / m_median.median();
 			}
@@ -648,7 +754,8 @@ int suggest_retune(double tuning_cents, int year, retune_option * out, int max_o
 }
 
 bool compute_key(const float * mono, std::size_t count, unsigned sample_rate,
-                 key_analysis & out, listener * l, int threads)
+                 key_analysis & out, listener * l, int threads,
+                 key_frames * frames_out)
 {
 	out = key_analysis();
 	if (mono == nullptr || count == 0 || sample_rate == 0) return false;
@@ -846,6 +953,15 @@ bool compute_key(const float * mono, std::size_t count, unsigned sample_rate,
 			row[pc] += w;
 			full[pc] += w;
 		}
+	}
+
+	if (frames_out != nullptr)
+	{
+		frames_out->hop_seconds = static_cast<double>(hop) / sample_rate;
+		frames_out->frames = frames;
+		frames_out->chroma = frame_chroma;
+		frames_out->rms = rms;
+		frames_out->gate = static_cast<float>(plan.gate);
 	}
 
 	double sum = 0;

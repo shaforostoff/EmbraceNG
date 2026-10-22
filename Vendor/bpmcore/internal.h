@@ -88,6 +88,10 @@ public:
 	                 int threads);
 
 private:
+	//! Outputs [from, to) into `dst`, all of whose input samples are present:
+	//! input sample i is read at src[i - origin].
+	void render(std::int64_t from, std::int64_t to, const float * src,
+	            std::int64_t origin, float * dst) const;
 	//! One output sample, from input samples that may run off either end.
 	float tap_edges(std::int64_t at, const float * in, std::size_t count) const;
 
@@ -156,8 +160,22 @@ extern const double key_profile_minor[12];
 //! Independent of the tempo analysis in every way but the decode they share.
 //! `threads` behaves as it does for compute_odf, and the result does not
 //! depend on it.
+//!
+//! `frames_out`, when given, receives what the measurements were drawn from,
+//! frame by frame - for a caller that wants the pitch content over time
+//! rather than a key, such as an audio fingerprint.
+struct key_frames
+{
+	double hop_seconds = 0;     //!< frame spacing
+	int frames = 0;
+	std::vector<float> chroma;  //!< `frames` rows of 12, tuning offset taken out
+	std::vector<float> rms;     //!< loudness of each frame, before the gate
+	float gate = 0;             //!< frames below this were skipped as silence
+};
+
 bool compute_key(const float * mono, std::size_t count, unsigned sample_rate,
-                 key_analysis & out, listener * l, int threads = 0);
+                 key_analysis & out, listener * l, int threads = 0,
+                 key_frames * frames_out = nullptr);
 
 //! The metrical grid the audio settles on.
 struct grid

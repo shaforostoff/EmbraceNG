@@ -66,7 +66,14 @@ void parallel_blocks(int blocks, int threads, body_t body)
 
 	std::vector<std::thread> pool;
 	pool.reserve(static_cast<std::size_t>(threads - 1));
-	for (int t = 0; t < threads - 1; t++) pool.emplace_back(take);
+	// A thread the system will not give is not worth taking the host down
+	// over, which a throw past the joinable threads in `pool` would do. The
+	// blocks come off a shared counter, so fewer threads still do them all.
+	try
+	{
+		for (int t = 0; t < threads - 1; t++) pool.emplace_back(take);
+	}
+	catch (...) {}
 	take();
 	for (std::size_t t = 0; t < pool.size(); t++) pool[t].join();
 }

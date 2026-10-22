@@ -20,7 +20,7 @@ rather than keeping a copy of its own.
 The tempo, rhythm and key analysis behind `Source/BPMAnalyzer`, taken from
 
     https://github.com/shaforostoff/foo_rubato   bpmcore/
-    revision b61c77a561f9e67b1490131320af365265e63748, 2026-09-24
+    revision 2a4330dd8d9ba5c1b7aa1a9dc8637d36c421ec04, 2026-10-14
 
 `bpmcore` is deliberately free of any host -- no foobar2000, no Windows, no
 AudioToolbox -- so the same sources build here as they do in the foobar2000

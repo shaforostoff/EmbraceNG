@@ -95,6 +95,16 @@ public:
 	//! lets pffft have its 16-byte alignment without the analysis knowing.
 	fft_scalar * input() { return m_in; }
 
+	//! Writes `src[i] * window[i]` into `input` for all `nfft` samples.
+	//!
+	//! The product is formed in double whatever the transform's width, and
+	//! rounded to it once - the same arithmetic as the plain loop, two lanes at
+	//! a time where SSE2 is there to do it. Left to MSVC that loop stayed
+	//! scalar, with a convert either side of every multiply, and on a Haswell,
+	//! which has one port for both conversions, the envelope's cost two thirds
+	//! as much as the transform it fed.
+	void window_from(const float * src, const double * window);
+
 	//! Transform what `input` currently holds.
 	void forward();
 
