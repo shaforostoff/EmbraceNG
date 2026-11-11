@@ -58,9 +58,9 @@ static inline AUParameter *EmbraceAUMakeParameter(
 }
 
 
-// Declick and dehum name none of their parameters' values, so the overload
-// exists to keep fourteen call sites from each carrying a trailing `nil` that
-// says nothing.
+// Most of declick's and dehum's parameters name none of their values, so the
+// overload exists to keep those call sites from each carrying a trailing `nil`
+// that says nothing.
 //
 static inline AUParameter *EmbraceAUMakeParameter(
     NSString *identifier, NSString *name, AUParameterAddress address,

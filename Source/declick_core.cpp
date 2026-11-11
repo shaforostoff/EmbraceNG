@@ -232,6 +232,11 @@ typedef void (*SortedRowFn)(double * rows, int n, int stride, int count,
 typedef void (*Dot2Fn)(const double * x0, const double * y0, int n0,
                        const double * x1, const double * y1, int n1,
                        double * r0, double * r1);
+//! The shape fit's matched filter at `count` starts in a row, each to the bit:
+//! at start p, out[4p + s] = dot(G + s Lg, e + p, Lg) for the three shapes s
+//! and out[4p + 3] = dot(e + p, e + p, L), with L <= Lg. See shapeFit().
+typedef void (*ShapeCorrFn)(const double * G, int Lg, int L, const double * e,
+                            int count, double * out);
 //! The flank repair's high-passed correction: acc[t0 + j + u] += hp[u] * d[j]
 //! for j < m and u in -Hh .. Hh, j by j, skipping a d[j] of zero, and never
 //! past acc[xEnd]. hpP and hpN point at tap 0 of the taps with kFlankPad
@@ -265,6 +270,7 @@ struct Kernels {
     FftOneFn    fftOne;
     SortedRowFn sortedRow;
     Dot2Fn      dot2;
+    ShapeCorrFn shapeCorr;
     FlankAddFn  flankAdd;
     FrameQuantileFn frameQuantile;
     BinUnpackFn binUnpack;
@@ -296,6 +302,17 @@ void dot2Base(const double * x0, const double * y0, int n0,
               double * r0, double * r1) {
     *r0 = dot(x0, y0, n0);
     *r1 = dot(x1, y1, n1);
+}
+
+void shapeCorrBase(const double * G, int Lg, int L, const double * e,
+                   int count, double * out) {
+    for (int p = 0; p < count; ++p) {
+        const double * x = e + p;
+        out[4 * p]     = dot(G, x, Lg);
+        out[4 * p + 1] = dot(G + Lg, x, Lg);
+        out[4 * p + 2] = dot(G + 2 * Lg, x, Lg);
+        out[4 * p + 3] = dot(x, x, L);
+    }
 }
 
 void flankAddBase(double * acc, const double * hpP, const double *, int Hh,
@@ -637,7 +654,8 @@ void floorGainBase(const FloorGain & p, int b0, int b1, double * G) {
 }
 
 const Kernels kBaseKernels = {
-    filterBase, autocorrBase, fftPairBase, fftOneBase, sortedRowBase, dot2Base, flankAddBase,
+    filterBase, autocorrBase, fftPairBase, fftOneBase, sortedRowBase, dot2Base,
+    shapeCorrBase, flankAddBase,
     nullptr,                    // frameQuantile: the baseline keeps sorted windows
     binUnpackBase, smooth7Base, floorGainBase,
     DECLICK_SSE2 ? "sse2" : "scalar"
@@ -1127,6 +1145,72 @@ DECLICK_AVX2_FN void dot2Avx2(const double * x0, const double * y0, int n0,
                                           x1, y1, e1, n1) : _mm_setzero_pd());
 }
 
+//! shapeCorrBase()'s four dot()s at a start, together: dot2Avx2()'s partial
+//! sums, eight of them, with each load of e serving all four. The same
+//! products in the same order as dot(), so the same bits; the MSVC workarounds
+//! are dot2Avx2()'s.
+DECLICK_AVX2_FN void shapeCorrAvx2(const double * G, int Lg, int L, const double * e,
+                                   int count, double * out) {
+    const double * g0 = G;
+    const double * g1 = G + Lg;
+    const double * g2 = G + 2 * Lg;
+    const int eg = (Lg > 0) ? (Lg & ~7) : 0;
+    const int el = (L > 0) ? (L & ~7) : 0;
+    const int ec = (el < eg) ? el : eg;
+    for (int p = 0; p < count; ++p) {
+        const double * x = e + p;
+        __m256d a0 = _mm256_setzero_pd(), b0 = _mm256_setzero_pd();
+        __m256d a1 = _mm256_setzero_pd(), b1 = _mm256_setzero_pd();
+        __m256d a2 = _mm256_setzero_pd(), b2 = _mm256_setzero_pd();
+        __m256d a3 = _mm256_setzero_pd(), b3 = _mm256_setzero_pd();
+        for (int i = 0; i < ec; i += 8) {
+            const __m256d xa = _mm256_loadu_pd(x + i), xb = _mm256_loadu_pd(x + i + 4);
+            a0 = _mm256_add_pd(a0, _mm256_mul_pd(_mm256_loadu_pd(g0 + i), xa));
+            a1 = _mm256_add_pd(a1, _mm256_mul_pd(_mm256_loadu_pd(g1 + i), xa));
+            a2 = _mm256_add_pd(a2, _mm256_mul_pd(_mm256_loadu_pd(g2 + i), xa));
+            a3 = _mm256_add_pd(a3, _mm256_mul_pd(xa, xa));
+            b0 = _mm256_add_pd(b0, _mm256_mul_pd(_mm256_loadu_pd(g0 + i + 4), xb));
+            b1 = _mm256_add_pd(b1, _mm256_mul_pd(_mm256_loadu_pd(g1 + i + 4), xb));
+            b2 = _mm256_add_pd(b2, _mm256_mul_pd(_mm256_loadu_pd(g2 + i + 4), xb));
+            b3 = _mm256_add_pd(b3, _mm256_mul_pd(xb, xb));
+        }
+        for (int i = ec; i < eg; i += 8) {
+            const __m256d xa = _mm256_loadu_pd(x + i), xb = _mm256_loadu_pd(x + i + 4);
+            a0 = _mm256_add_pd(a0, _mm256_mul_pd(_mm256_loadu_pd(g0 + i), xa));
+            a1 = _mm256_add_pd(a1, _mm256_mul_pd(_mm256_loadu_pd(g1 + i), xa));
+            a2 = _mm256_add_pd(a2, _mm256_mul_pd(_mm256_loadu_pd(g2 + i), xa));
+            b0 = _mm256_add_pd(b0, _mm256_mul_pd(_mm256_loadu_pd(g0 + i + 4), xb));
+            b1 = _mm256_add_pd(b1, _mm256_mul_pd(_mm256_loadu_pd(g1 + i + 4), xb));
+            b2 = _mm256_add_pd(b2, _mm256_mul_pd(_mm256_loadu_pd(g2 + i + 4), xb));
+        }
+        for (int i = ec; i < el; i += 8) {
+            const __m256d xa = _mm256_loadu_pd(x + i), xb = _mm256_loadu_pd(x + i + 4);
+            a3 = _mm256_add_pd(a3, _mm256_mul_pd(xa, xa));
+            b3 = _mm256_add_pd(b3, _mm256_mul_pd(xb, xb));
+        }
+        double sums[32];
+        _mm256_storeu_pd(sums,      a0);
+        _mm256_storeu_pd(sums + 4,  b0);
+        _mm256_storeu_pd(sums + 8,  a1);
+        _mm256_storeu_pd(sums + 12, b1);
+        _mm256_storeu_pd(sums + 16, a2);
+        _mm256_storeu_pd(sums + 20, b2);
+        _mm256_storeu_pd(sums + 24, a3);
+        _mm256_storeu_pd(sums + 28, b3);
+        _mm256_zeroupper();
+        const double * gs[4] = {g0, g1, g2, x};
+        for (int s = 0; s < 4; ++s) {
+            const double * c = sums + 8 * s;
+            const int n = (s < 3) ? Lg : L;
+            _mm_store_sd(out + 4 * p + s,
+                         (n > 0) ? dotFinish(_mm_loadu_pd(c), _mm_loadu_pd(c + 2),
+                                             _mm_loadu_pd(c + 4), _mm_loadu_pd(c + 6),
+                                             gs[s], x, (s < 3) ? eg : el, n)
+                                 : _mm_setzero_pd());
+        }
+    }
+}
+
 //! flankAddBase() turned round: sixteen outputs at a time held in registers,
 //! every sample whose band reaches them added in, then stored. The base loop
 //! comes out scalar from MSVC 19.16, which cannot tell acc from the taps, and
@@ -1427,7 +1511,7 @@ DECLICK_AVX2_FN void floorGainAvx2(const FloorGain & p, int b0, int b1, double *
 }
 
 const Kernels kAvx2Kernels = { filterAvx2, autocorrAvx2, fftPairAvx2, fftOneAvx2,
-                               sortedRowAvx2, dot2Avx2, flankAddAvx2, frameQuantileAvx2,
+                               sortedRowAvx2, dot2Avx2, shapeCorrAvx2, flankAddAvx2, frameQuantileAvx2,
                                binUnpackAvx2, smooth7Avx2, floorGainAvx2, "avx2" };
 
 //! AVX2 and FMA in the CPU, and YMM state saved by the OS.
@@ -1612,9 +1696,70 @@ void autocorrNeon(const double * x, int n, double * r, int maxLag) {
     filterNeon(x, x, r, maxLag + 1, n);
 }
 
+//! shapeCorrBase() with dotNeon() in place of dot(): its four partial sums
+//! for each of the four, sixteen chains for the four FMA pipes, with each
+//! load of e serving all four. Each is dotNeon() to the bit.
+void shapeCorrNeon(const double * G, int Lg, int L, const double * e,
+                   int count, double * out) {
+    const double * g0 = G;
+    const double * g1 = G + Lg;
+    const double * g2 = G + 2 * Lg;
+    const int eg = (Lg > 0) ? (Lg & ~7) : 0;
+    const int el = (L > 0) ? (L & ~7) : 0;
+    const int ec = (el < eg) ? el : eg;
+    // dotNeon()'s pairs left over, its close and its odd sample.
+    auto close = [](float64x2_t s0, float64x2_t s1, float64x2_t s2, float64x2_t s3,
+                    const double * a, const double * b, int i, int n) {
+        for (; i + 2 <= n; i += 2) s0 = vfmaq_f64(s0, vld1q_f64(a + i), vld1q_f64(b + i));
+        double acc = vaddvq_f64(vaddq_f64(vaddq_f64(s0, s1), vaddq_f64(s2, s3)));
+        if (i < n) acc += a[i] * b[i];
+        return acc;
+    };
+#define DECLICK_SHAPE_ACC(a, b, c, d, gp, x)          \
+        a = vfmaq_f64(a, vld1q_f64((gp) + i),     x##0); \
+        b = vfmaq_f64(b, vld1q_f64((gp) + i + 2), x##1); \
+        c = vfmaq_f64(c, vld1q_f64((gp) + i + 4), x##2); \
+        d = vfmaq_f64(d, vld1q_f64((gp) + i + 6), x##3)
+    for (int p = 0; p < count; ++p) {
+        const double * x = e + p;
+        const float64x2_t z = vdupq_n_f64(0.0);
+        float64x2_t a0 = z, a1 = z, a2 = z, a3 = z;
+        float64x2_t b0 = z, b1 = z, b2 = z, b3 = z;
+        float64x2_t c0 = z, c1 = z, c2 = z, c3 = z;
+        float64x2_t d0 = z, d1 = z, d2 = z, d3 = z;
+        int i = 0;
+        for (; i < ec; i += 8) {
+            const float64x2_t xv0 = vld1q_f64(x + i), xv1 = vld1q_f64(x + i + 2);
+            const float64x2_t xv2 = vld1q_f64(x + i + 4), xv3 = vld1q_f64(x + i + 6);
+            DECLICK_SHAPE_ACC(a0, a1, a2, a3, g0, xv);
+            DECLICK_SHAPE_ACC(b0, b1, b2, b3, g1, xv);
+            DECLICK_SHAPE_ACC(c0, c1, c2, c3, g2, xv);
+            DECLICK_SHAPE_ACC(d0, d1, d2, d3, x, xv);
+        }
+        for (; i < eg; i += 8) {
+            const float64x2_t xv0 = vld1q_f64(x + i), xv1 = vld1q_f64(x + i + 2);
+            const float64x2_t xv2 = vld1q_f64(x + i + 4), xv3 = vld1q_f64(x + i + 6);
+            DECLICK_SHAPE_ACC(a0, a1, a2, a3, g0, xv);
+            DECLICK_SHAPE_ACC(b0, b1, b2, b3, g1, xv);
+            DECLICK_SHAPE_ACC(c0, c1, c2, c3, g2, xv);
+        }
+        for (i = ec; i < el; i += 8) {
+            const float64x2_t xv0 = vld1q_f64(x + i), xv1 = vld1q_f64(x + i + 2);
+            const float64x2_t xv2 = vld1q_f64(x + i + 4), xv3 = vld1q_f64(x + i + 6);
+            DECLICK_SHAPE_ACC(d0, d1, d2, d3, x, xv);
+        }
+        double * o = out + 4 * p;
+        o[0] = (Lg > 0) ? close(a0, a1, a2, a3, g0, x, eg, Lg) : 0.0;
+        o[1] = (Lg > 0) ? close(b0, b1, b2, b3, g1, x, eg, Lg) : 0.0;
+        o[2] = (Lg > 0) ? close(c0, c1, c2, c3, g2, x, eg, Lg) : 0.0;
+        o[3] = (L > 0) ? close(d0, d1, d2, d3, x, x, el, L) : 0.0;
+    }
+#undef DECLICK_SHAPE_ACC
+}
+
 // The scalar FFT pass vectorises as it stands, two doubles to a register.
 const Kernels kNeonKernels = { filterNeon, autocorrNeon, fftPairBase, fftOneBase,
-                               sortedRowBase, dot2Base, flankAddBase, nullptr,
+                               sortedRowBase, dot2Base, shapeCorrNeon, flankAddBase, nullptr,
                                binUnpackBase, smooth7Base, floorGainBase, "neon" };
 
 #endif // DECLICK_NEON
@@ -1696,19 +1841,42 @@ void allowWideKernels(bool allow) { g_kernels = pickKernels(allow); }
 
 // ---------------------------------------------------------------------------
 
-Params Params::fromSliders(const float s[7]) {
-    float v[7];
-    for (int i = 0; i < 7; ++i) v[i] = (s[i] > 0.0f) ? ((s[i] < 1.0f) ? s[i] : 1.0f) : 0.0f;   // NaN to 0
+int Params::snapOrder(int order) {
+    if (order < 96) return 64;
+    if (order < 192) return 128;
+    return 256;
+}
+
+void Params::restrictToControls() {
+    const Params d = defaults();
+    extent      = d.extent;
+    maxLengthMs = d.maxLengthMs;
+    depth       = d.depth;
+    passes      = d.passes;
+    dryWet      = d.dryWet;
+    order       = snapOrder(order);
+    sanitize();
+}
+
+Params Params::fromSliders(const float s[kSliderCount], bool cautious) {
+    float v[kSliderCount];
+    for (int i = 0; i < kSliderCount; ++i) v[i] = (s[i] > 0.0f) ? ((s[i] < 1.0f) ? s[i] : 1.0f) : 0.0f;   // NaN to 0
     Params p = defaults();
     p.sensitivity = v[0];
-    p.extent      = v[1];
-    p.maxLengthMs = v[2] * 20.0f;                  // clamped to 0.2 below
-    p.depth       = v[3];
-    p.passes      = 1 + (int)(v[4] * 2.999f);
-    p.order       = 16 + 8 * (int)(v[5] * 30.999f);
-    p.dryWet      = v[6];
+    p.order       = snapOrder(16 + 8 * (int)(v[1] * 30.999f));
+    p.cautious    = cautious;
     p.sanitize();
     return p;
+}
+
+float Params::orderSlider(int order) {
+    // The middle of the old slider's bucket for each: 16 + 8 * 6 and
+    // 16 + 8 * 14, and the top.
+    switch (snapOrder(order)) {
+    case 64:  return 6.5f / 30.999f;
+    case 128: return 14.5f / 30.999f;
+    default:  return 1.0f;
+    }
 }
 
 void Params::sanitize() {
@@ -1727,7 +1895,8 @@ void Params::sanitize() {
 bool Params::operator==(const Params & o) const {
     return sensitivity == o.sensitivity && extent == o.extent
         && maxLengthMs == o.maxLengthMs && depth == o.depth && passes == o.passes
-        && order == o.order && dryWet == o.dryWet && delta == o.delta;
+        && order == o.order && dryWet == o.dryWet && delta == o.delta
+        && cautious == o.cautious;
 }
 
 // ---------------------------------------------------------------------------
@@ -1766,6 +1935,20 @@ void Config::compute(const Params & pIn, double sampleRate) {
     wet    = p.dryWet;
     delta  = p.delta;
     depth  = p.depth;
+
+    // Extra cautious: the AR repair alone. Off before anything below derives
+    // a latency, a delay or a buffer from these.
+    if (p.cautious) {
+        shape        = 0;
+        body         = 0;
+        fine         = 0;
+        micro        = 0;
+        mid          = 0;
+        flank        = 0;
+        crackleFloor = 0;
+        carpet       = 0;
+        carpetFano   = 0;
+    }
 
     // Sensitivity 0..1 maps onto the trigger threshold, in robust sigmas.
     // 6.0 catches only unmistakable clicks; 2.5 is aggressive enough to start
@@ -1879,6 +2062,25 @@ void Config::compute(const Params & pIn, double sampleRate) {
         microM = (int)floor(microMs * 1e-3 * sampleRate / (double)(microN / 2) + 0.5);
         if (microM < 1) microM = 1;
         if (microLag() + microM * (microN / 2) + microN - 1 > bodyDelay(bodyN)) micro = 0;
+    }
+
+    // The shape fit's half length, and its threshold for three shapes at the
+    // false alarm rate shapeChi gives two: a chi-square tail with three degrees
+    // of freedom held to exp(-shapeChi^2 / 2), the tail with two.
+    shapeK = (int)floor(shapeMs * 1e-3 * sampleRate + 0.5);
+    if (shapeK < 2) shapeK = 2;
+    if (shapeK > (int)kShapeMax) shapeK = (int)kShapeMax;
+    {
+        const double p = exp(-0.5 * shapeChi * shapeChi);
+        double lo = 0.0, hi = 40.0;
+        for (int it = 0; it < 60; ++it) {
+            const double x = 0.5 * (lo + hi);
+            const double q = erfc(x * 0.7071067811865476)
+                           + 0.7978845608028654 * x * exp(-0.5 * x * x);
+            if (q > p) lo = x;
+            else hi = x;
+        }
+        shapeThr = 0.5 * (lo + hi);
     }
 
     // The envelope the buffers are sized from. Same clamps as maxRun above, but
@@ -2084,6 +2286,7 @@ void Channel::configure(const Config & cfg) {
 
     m_win.assign(need, 0.0);
     m_dry.assign(need, 0.0);
+    m_in.assign(need, 0.0);
     m_full.assign(need, 0.0);
     m_flag.assign(need, 0);
     m_strong.assign(need, 0);
@@ -2111,6 +2314,22 @@ void Channel::configure(const Config & cfg) {
     // same every block. Build it once here - sized to the envelope like
     // everything else, so a later reconfigure does not allocate.
     m_hann.assign(need, 0.0);
+
+    // The shape fit: three shapes of at most kShapeMax either side, the same
+    // through the model, and per-block scratch, all at the envelope.
+    {
+        const size_t L = 2 * (size_t)kShapeMax + 1;
+        m_shBand.assign(need, 0.0);
+        m_shQ.assign(3 * L, 0.0);
+        m_shG.assign(3 * (L + bo), 0.0);
+        m_shSum.assign(need + 1, 0.0);
+        m_shAvg.assign(need, 0.0);
+        m_shMed.assign(need, 0.0);
+        m_shChi.assign(need, 0.0);
+        m_shCo.assign(3 * need, 0.0);
+        m_shPk.assign(need, 0);
+        shapeBuild();
+    }
     m_hannLen = 2 * cfg.pad + (int)kBlock;
     if (m_hannLen > 1 && (size_t)m_hannLen <= need) {
         const double twoPi = 6.283185307179586;
@@ -2471,7 +2690,10 @@ void Channel::configure(const Config & cfg) {
 }
 
 size_t Channel::heapBytes() const {
-    return (m_win.capacity() + m_dry.capacity() + m_full.capacity() + m_fwd.capacity()
+    return (m_win.capacity() + m_dry.capacity() + m_in.capacity() + m_full.capacity() + m_fwd.capacity()
+            + m_shBand.capacity() + m_shQ.capacity() + m_shG.capacity() + m_shSum.capacity()
+            + m_shAvg.capacity() + m_shMed.capacity() + m_shChi.capacity() + m_shCo.capacity()
+            + m_shPk.capacity() * sizeof(int) / sizeof(double)
             + m_bwd.capacity() + m_det.capacity() + m_a.capacity()
             + m_ra.capacity() + m_aa.capacity() + m_arev.capacity() + m_hann.capacity()
             + m_madRing.capacity() + m_scratch.capacity()
@@ -2584,6 +2806,10 @@ bool Channel::adoptWarm(const WarmState & s) {
 void Channel::resetPath() {
     std::fill(m_win.begin(), m_win.end(), 0.0);
     std::fill(m_dry.begin(), m_dry.end(), 0.0);
+    std::fill(m_in.begin(), m_in.end(), 0.0);
+    std::fill(m_shBand.begin(), m_shBand.end(), 0.0);
+    for (int i = 0; i < 8; ++i) m_shZ[i] = 0.0;
+    m_shSigHint = 0.0;
     std::fill(m_full.begin(), m_full.end(), 0.0);
     std::fill(m_flag.begin(), m_flag.end(), (uint8_t)0);
     std::fill(m_strong.begin(), m_strong.end(), (uint8_t)0);
@@ -2813,25 +3039,23 @@ bool Channel::updateAutocorr(int n, int order) {
     return true;
 }
 
-//! The median of the first `have` entries of the noise ring: the value
-//! nth_element over a copy of all of them would pick, and the same one bit for
-//! bit - an order statistic does not depend on how it is found.
+//! The value nth_element over a copy of v[0 .. have) would put at `mid`, the
+//! same one bit for bit - an order statistic does not depend on how it is
+//! found - with `keep` room for `have` of them. `hint` is where it was last
+//! time, 0 for nowhere, and is set to where it is now.
 //!
-//! nth_element over the whole ring was a seventh of the run time. But from one
-//! block to the next the median moves little, so one branch-free pass keeps only
-//! the entries within a band either side of the last one and counts those below
-//! it, and nth_element then has a tenth as many to look at. Where the median has
-//! left the band, a second pass keeps the side it went to instead.
-double Channel::ringMedian(size_t have) {
-    const size_t mid = have / 2;
-    const double * v = &m_madRing[0];
-    m_scratch.resize(have);
-    double * keep = &m_scratch[0];
+//! nth_element over the whole of the noise ring was a seventh of the run time.
+//! But from one block to the next the median moves little, so one branch-free
+//! pass keeps only the entries within a band either side of the last one and
+//! counts those below it, and nth_element then has a tenth as many to look at.
+//! Where the median has left the band, a second pass keeps the side it went to
+//! instead.
+static double bandSelect(const double * v, size_t have, size_t mid, double & hint, double * keep) {
     size_t n = 0, k = mid;
 
-    if (m_medHint > 0.0) {
-        const double lo = m_medHint * (1.0 - kMedianBand);
-        const double hi = m_medHint * (1.0 + kMedianBand);
+    if (hint > 0.0) {
+        const double lo = hint * (1.0 - kMedianBand);
+        const double hi = hint * (1.0 + kMedianBand);
         size_t below = 0;
         for (size_t i = 0; i < have; ++i) {
             const double x = v[i];
@@ -2861,8 +3085,14 @@ double Channel::ringMedian(size_t have) {
     }
 
     std::nth_element(keep, keep + k, keep + n);
-    m_medHint = keep[k];
+    hint = keep[k];
     return keep[k];
+}
+
+//! The median of the first `have` entries of the noise ring; see bandSelect().
+double Channel::ringMedian(size_t have) {
+    m_scratch.resize(have);
+    return bandSelect(&m_madRing[0], have, have / 2, m_medHint, &m_scratch[0]);
 }
 
 void Channel::detect(int from, int to, int pass) {
@@ -3077,8 +3307,8 @@ bool Channel::repairRun(int s, int e, bool again, double gain) {
     // from m_win it compounded: on dense runs each repair read the last one
     // as context, could reach 1.5x it, and an ill-conditioned model (an MP3's
     // empty top octave) walked a side channel from 0.17 to 728 inside 4 ms.
-    const double localMax = dmax(absMax(&m_dry[(size_t)lo0], s - lo0),
-                                 absMax(&m_dry[(size_t)(e + 1)], hi0 - e));
+    const double localMax = dmax(absMax(&m_in[(size_t)lo0], s - lo0),
+                                 absMax(&m_in[(size_t)(e + 1)], hi0 - e));
     const double limit = 1.5 * dmax(localMax, 1e-9);
 
     // Subtractive repair. A click ADDS to the music, so the damaged
@@ -3103,8 +3333,8 @@ bool Channel::repairRun(int s, int e, bool again, double gain) {
 
         // A re-repair subtracts from what was actually there, not from the
         // earlier repair - which stays put if this one cannot be done.
-        const double x = again ? m_dry[s + j] : m_win[s + j];
-        const double xf = again ? m_dry[s + j] : m_full[s + j];
+        const double x = again ? m_in[s + j] : m_win[s + j];
+        const double xf = again ? m_in[s + j] : m_full[s + j];
         const double dj = x - v;
 
         double w = wcap;
@@ -3124,6 +3354,376 @@ bool Channel::repairRun(int s, int e, bool again, double gain) {
     if (again) m_reclamped += (uint64_t)clamped;
     else m_clamped += (uint64_t)clamped;
     return true;
+}
+
+//! A shellac click as it comes out of a transfer: the mean of Sentimiento
+//! gaucho's strong clicks (Biagi, 1942, TangoTunes .m4a) less an aligned vinyl
+//! copy, high-passed at 300 Hz, at 44.1 kHz, +-1.2 ms, peak -1 at the centre.
+//! Down, up 0.1 ms later, then a slow tail half a millisecond long that a
+//! band-limited impulse cannot follow: most of a click's 0.5-2 kHz.
+static const double kShClick[107] = {
+    0.0114, 0.0130, 0.0163, 0.0174, 0.0153, 0.0128, 0.0101, 0.0085, 0.0100, 0.0134, 0.0153, 0.0148,
+    0.0126, 0.0130, 0.0147, 0.0151, 0.0138, 0.0130, 0.0129, 0.0128, 0.0112, 0.0103, 0.0098, 0.0077,
+    0.0047, 0.0035, 0.0026, 0.0018, 0.0027, 0.0056, 0.0077, 0.0091, 0.0106, 0.0118, 0.0096, 0.0058,
+    0.0030, 0.0011, -0.0027, -0.0081, -0.0129, -0.0172, -0.0211, -0.0232, -0.0268, -0.0363, -0.0533,
+    -0.0751, -0.1079, -0.1681, -0.2838, -0.4869, -0.7681, -1.0000, -0.9672, -0.5656, 0.0514, 0.5694,
+    0.7758, 0.7051, 0.5235, 0.3615, 0.2563, 0.1912, 0.1441, 0.1091, 0.0879, 0.0775, 0.0710, 0.0665,
+    0.0639, 0.0615, 0.0570, 0.0513, 0.0455, 0.0400, 0.0343, 0.0296, 0.0259, 0.0227, 0.0178, 0.0131,
+    0.0102, 0.0095, 0.0082, 0.0059, 0.0031, 0.0023, 0.0017, -0.0025, -0.0084, -0.0093, -0.0060, -0.0031,
+    -0.0033, -0.0064, -0.0098, -0.0091, -0.0067, -0.0045, -0.0037, -0.0032, -0.0040, -0.0063, -0.0100,
+    -0.0130, -0.0154
+};
+
+//! The three shapes for Config::shapeK and the rate, Gram-Schmidt'ed: a 1-8 kHz
+//! band-limited impulse (windowed sinc), its derivative, and the measured click
+//! kShClick, taken to the rate by windowed-sinc interpolation - each under a
+//! Tukey taper of a half. And the gate's 3-8 kHz band-pass: fourth-order
+//! Butterworth high- and low-pass sections, the upper edge at most 0.45 of the
+//! rate.
+void Channel::shapeBuild() {
+    const int k = m_cfg.shapeK;
+    const int L = 2 * k + 1;
+    const double fs = m_cfg.rate;
+    const double pi = 3.141592653589793;
+    const double f1 = 1000.0 / fs;
+    const double f2 = dmin(8000.0, 0.45 * fs) / fs;
+    struct Bl {
+        double f1, f2, pi;
+        double sinc(double x) const { return (x == 0.0) ? 1.0 : sin(pi * x) / (pi * x); }
+        double at(double n) const { return 2.0 * f2 * sinc(2.0 * f2 * n) - 2.0 * f1 * sinc(2.0 * f1 * n); }
+    } bl = {f1, f2, pi};
+    double * q0 = &m_shQ[0];
+    double * q1 = q0 + L;
+    double * q2 = q1 + L;
+    for (int i = 0; i < L; ++i) {
+        const double x = (double)i / (double)(L - 1);
+        double w = 1.0;
+        if (x < 0.25) w = 0.5 * (1.0 + cos(4.0 * pi * (x - 0.25)));
+        else if (x > 0.75) w = 0.5 * (1.0 + cos(4.0 * pi * (x - 0.75)));
+        const double n = (double)(i - k);
+        q0[i] = bl.at(n) * w;
+        // The click at n samples of the rate is at u of the table's: a sinc
+        // cut at the lower of the two Nyquists, under a Hann window 12 table
+        // samples either side. At 44.1 kHz it is the table itself.
+        const double u = 53.0 + n * 44100.0 / fs;
+        const double fc = dmin(1.0, fs / 44100.0);
+        double v = 0.0;
+        for (int j = (int)floor(u) - 11; j <= (int)floor(u) + 12; ++j) {
+            if (j < 0 || j > 106) continue;
+            const double d = u - (double)j;
+            if (fabs(d) >= 12.0) continue;
+            v += kShClick[j] * fc * bl.sinc(fc * d) * 0.5 * (1.0 + cos(pi * d / 12.0));
+        }
+        q2[i] = v * w;
+    }
+    q1[0] = q0[1] - q0[0];
+    q1[L - 1] = q0[L - 1] - q0[L - 2];
+    for (int i = 1; i < L - 1; ++i) q1[i] = 0.5 * (q0[i + 1] - q0[i - 1]);
+    double * Q[3] = {q0, q1, q2};
+    for (int a = 0; a < 3; ++a) {
+        for (int b = 0; b < a; ++b) {
+            double d = 0.0;
+            for (int i = 0; i < L; ++i) d += Q[a][i] * Q[b][i];
+            for (int i = 0; i < L; ++i) Q[a][i] -= d * Q[b][i];
+        }
+        double nn = 0.0;
+        for (int i = 0; i < L; ++i) nn += Q[a][i] * Q[a][i];
+        nn = (nn > 0.0) ? 1.0 / sqrt(nn) : 0.0;
+        for (int i = 0; i < L; ++i) Q[a][i] *= nn;
+    }
+    // RBJ sections, Q of a fourth-order Butterworth: b0 b1 b2 a1 a2 each.
+    const double qs[2] = {0.5411961001461970, 1.3065629648763766};
+    for (int sct = 0; sct < 4; ++sct) {
+        const bool high = sct < 2;
+        const double w0 = 2.0 * pi * (high ? 3000.0 : dmin(8000.0, 0.45 * fs)) / fs;
+        const double c = cos(w0), al = sin(w0) / (2.0 * qs[sct & 1]);
+        const double a0 = 1.0 + al;
+        double * B = &m_shB[5 * sct];
+        B[0] = (high ? 0.5 * (1.0 + c) : 0.5 * (1.0 - c)) / a0;
+        B[1] = (high ? -(1.0 + c) : (1.0 - c)) / a0;
+        B[2] = B[0];
+        B[3] = -2.0 * c / a0;
+        B[4] = (1.0 - al) / a0;
+    }
+    for (int i = 0; i < 8; ++i) m_shZ[i] = 0.0;
+}
+
+//! The input's 3-8 kHz power, for the gate, as each sample is pushed.
+void Channel::shapeBand(double v) {
+    double y = v;
+    for (int sct = 0; sct < 4; ++sct) {
+        const double * B = &m_shB[5 * sct];
+        double * z = &m_shZ[2 * sct];
+        const double o = B[0] * y + z[0];
+        z[0] = B[1] * y - B[3] * o + z[1];
+        z[1] = B[2] * y - B[4] * o;
+        y = o;
+    }
+    if (fabs(y) < 1e-30) y = 0.0;                  // no denormals in the state's wake
+    m_shBand[(size_t)m_fill] = y * y;
+}
+
+//! The shape fit on the clicks centred in this block; see Config::shape.
+//!
+//! On the model's forward residual e, the three shapes through the model are
+//! G; at a start t, C = G e[t..], and the least-squares weights are
+//! co = (G G')^-1 C, the fit's energy C.co. Its root over the residual's
+//! robust sigma is the matched filter, chi with three degrees of freedom.
+//! Where the gate is open, the fit's energy is shapeFitq or more of the
+//! residual's over the shapes' span, and chi peaks at shapeThr or more, at least a
+//! shape's length from a higher peak, and co.Q peaks at shapePeak or more of
+//! the input's peak over +-5 ms or at shapeHigh or more of the input's 3-8 kHz
+//! RMS there (the click's own span left out), co.Q is subtracted from the signal and
+//! co.G from e; then once more on what is left. The gate: the input's 3-8 kHz
+//! power averaged over 1 ms at the shape's centre, against shapeGate times the
+//! median of that average every 0.73 ms across +-15 ms (less where the window
+//! holds less), taken at the nearest 0.73 ms.
+int Channel::shapeFit(int to) {
+    const int order = m_cfg.order;
+    const int k = m_cfg.shapeK;
+    const int L = 2 * k + 1;
+    const int Lg = L + order;
+    const int c0 = m_pad, c1 = m_pad + (int)kBlock;
+    const int live0 = m_silentUntil + order;
+    const int live1 = (m_tailFrom < (1 << 30)) ? m_tailFrom - order : to;
+    int t0 = c0 - k;
+    if (t0 < live0) t0 = live0;
+    int t1 = c1 - k;
+    if (t1 + Lg > live1) t1 = live1 - Lg;
+    if (t1 <= t0) return 0;
+    const int n = t1 - t0;
+    const int e1 = t1 - 1 + Lg;
+
+    // The gate's 1 ms averages and their medians. It comes first: most blocks
+    // of most records never open it, and they cost no more than that.
+    double * tmp = &m_shAvg[0];
+    const double fs = m_cfg.rate;
+    int h1 = (int)floor(0.5e-3 * fs + 0.5);
+    if (h1 < 1) h1 = 1;
+    const int h5 = (int)floor(0.005 * fs + 0.5);
+    const int hx = (int)floor(0.23e-3 * fs + 0.5);
+    int H = (int)floor(fs / 1378.125 + 0.5);
+    if (H < 1) H = 1;
+    const int cmin = t0 + k, cmax = t1 - 1 + k;
+    int W = (int)floor(0.015 * fs + 0.5);
+    if (W > cmin - h1 - 1) W = cmin - h1 - 1;
+    if (W > m_fill - 2 - h1 - cmax) W = m_fill - 2 - h1 - cmax;
+    if (W < H) return 0;
+    const int a = cmin - W - h1;
+    const int b = cmax + W + h1 + 1;
+    double * S = &m_shSum[0];
+    S[0] = 0.0;
+    for (int i = a; i < b; ++i) S[i - a + 1] = S[i - a] + m_shBand[(size_t)i];
+    const double inv1 = 1.0 / (double)(2 * h1 + 1);
+    const int J = W / H;
+    const int nq = (cmax - cmin) / H + 1;
+    // The averages on the grid every H, which the medians share, and each grid
+    // point's highest average among the starts nearest it. A median is only
+    // worked out where that could clear it: where more than half the averages
+    // across +-15 ms lie under it over shapeGate; elsewhere the gate is shut.
+    const int cnt = 2 * J + 1;
+    double * gv = &m_shChi[0];
+    for (int p = 0; p < nq + 2 * J; ++p) {
+        const int c = cmin + (p - J) * H;
+        gv[p] = (S[c + h1 + 1 - a] - S[c - h1 - a]) * inv1;
+    }
+    double * med = &m_shMed[0];
+    for (int q = 0; q < nq; ++q) med[q] = 0.0;
+    for (int i = 0; i < n; ++i) {
+        const int c = t0 + i + k;
+        int q = (c - cmin + H / 2) / H;
+        if (q >= nq) q = nq - 1;
+        const double avg = (S[c + h1 + 1 - a] - S[c - h1 - a]) * inv1;
+        if (avg > med[q]) med[q] = avg;
+    }
+    bool open = false;
+    for (int q = 0; q < nq; ++q) {
+        const double hi = med[q];
+        int under = 0;
+        for (int j = 0; j < cnt; ++j) under += (gv[q + j] * m_cfg.shapeGate < hi);
+        if (under <= cnt / 2) { med[q] = HUGE_VAL; continue; }
+        for (int j = 0; j < cnt; ++j) tmp[j] = gv[q + j];
+        std::nth_element(tmp, tmp + cnt / 2, tmp + cnt);
+        med[q] = tmp[cnt / 2] * m_cfg.shapeGate;
+        open = true;
+    }
+    if (!open) return 0;
+
+    // The residual, and its robust sigma over what the block reads.
+    g_kernels->filter(&m_arev[0], &m_win[(size_t)(t0 - order)], &m_fwd[(size_t)t0],
+                      e1 - t0, order + 1);
+    // The median moves little from one open block to the next; see bandSelect().
+    for (int i = t0; i < e1; ++i) tmp[i - t0] = fabs(m_fwd[(size_t)i]);
+    const double sigma = 1.4826 * bandSelect(tmp, (size_t)(e1 - t0), (size_t)(e1 - t0) / 2,
+                                             m_shSigHint, &m_shChi[0]);
+    if (!(sigma > 1e-12)) return 0;
+
+    // The shapes through the model, and the inverse of their Gram matrix:
+    // each shape, zero-padded by the order either side, through the residual
+    // filter.
+    const double * Q = &m_shQ[0];
+    double * G = &m_shG[0];
+    for (int s3 = 0; s3 < 3; ++s3) {
+        const double * q = Q + (size_t)s3 * L;
+        for (int i = 0; i < order; ++i) tmp[i] = tmp[order + L + i] = 0.0;
+        for (int i = 0; i < L; ++i) tmp[order + i] = q[i];
+        g_kernels->filter(&m_arev[0], tmp, G + (size_t)s3 * Lg, Lg, order + 1);
+    }
+    // Symmetric: six sums, side by side, each in the order it always was.
+    double M[9];
+    {
+        const double * g0 = G;
+        const double * g1 = G + (size_t)Lg;
+        const double * g2 = G + 2 * (size_t)Lg;
+        double m00 = 0.0, m01 = 0.0, m02 = 0.0, m11 = 0.0, m12 = 0.0, m22 = 0.0;
+        for (int i = 0; i < Lg; ++i) {
+            m00 += g0[i] * g0[i];
+            m01 += g0[i] * g1[i];
+            m02 += g0[i] * g2[i];
+            m11 += g1[i] * g1[i];
+            m12 += g1[i] * g2[i];
+            m22 += g2[i] * g2[i];
+        }
+        M[0] = m00; M[1] = m01; M[2] = m02;
+        M[3] = m01; M[4] = m11; M[5] = m12;
+        M[6] = m02; M[7] = m12; M[8] = m22;
+    }
+    {
+        double * Mi = m_shMi;
+        Mi[0] = M[4] * M[8] - M[5] * M[7];
+        Mi[1] = M[2] * M[7] - M[1] * M[8];
+        Mi[2] = M[1] * M[5] - M[2] * M[4];
+        Mi[3] = M[5] * M[6] - M[3] * M[8];
+        Mi[4] = M[0] * M[8] - M[2] * M[6];
+        Mi[5] = M[2] * M[3] - M[0] * M[5];
+        Mi[6] = M[3] * M[7] - M[4] * M[6];
+        Mi[7] = M[1] * M[6] - M[0] * M[7];
+        Mi[8] = M[0] * M[4] - M[1] * M[3];
+        const double det = M[0] * Mi[0] + M[1] * Mi[3] + M[2] * Mi[6];
+        if (!(det > 0.0) || !finite(det)) return 0;
+        for (int i = 0; i < 9; ++i) Mi[i] /= det;
+    }
+
+    // Where the matched filter is worked out: within shapeSlackMs of a start
+    // the gate is open at. The gate's band filter is causal, and its power
+    // comes a few samples after the click: gated start by start, the true
+    // peak of a click can fall just outside, and the edge of the open stretch
+    // then passes for a peak, fitted off the click at a fraction of it.
+    const int D = (int)floor(m_cfg.shapeSlackMs * 1e-3 * fs + 0.5);
+    double * near = tmp;                            // free once G is built
+    {
+        double * open = tmp + n + 1;
+        for (int i = 0; i < n; ++i) {
+            const int c = t0 + i + k;
+            int q = (c - cmin + H / 2) / H;
+            if (q >= nq) q = nq - 1;
+            open[i] = ((S[c + h1 + 1 - a] - S[c - h1 - a]) * inv1 > med[q]) ? 1.0 : 0.0;
+        }
+        // Open within D: the nearest open start before, then after.
+        int last = -(1 << 30);
+        for (int i = 0; i < n; ++i) {
+            if (open[i] > 0.0) last = i;
+            near[i] = (i - last <= D) ? 1.0 : 0.0;
+        }
+        last = 1 << 30;
+        for (int i = n - 1; i >= 0; --i) {
+            if (open[i] > 0.0) last = i;
+            if (last - i <= D) near[i] = 1.0;
+        }
+    }
+
+    const double thr = m_cfg.shapeThr;
+    const double invS = 1.0 / sigma;
+    double * chi = &m_shChi[0];
+    double * co = &m_shCo[0];
+    int * pk = &m_shPk[0];
+    int fits = 0;
+    for (int round = 0; round < 2; ++round) {
+        // Over each stretch of starts near an open gate, kShapeRun at a time.
+        enum { kShapeRun = 32 };
+        double corr[4 * kShapeRun];
+        for (int i = 0; i < n;) {
+            if (!(near[i] > 0.0)) { chi[i++] = -1.0; continue; }   // not worked out
+            int m = 1;
+            while (m < kShapeRun && i + m < n && near[i + m] > 0.0) ++m;
+            g_kernels->shapeCorr(G, Lg, L, &m_fwd[(size_t)(t0 + i)], m, corr);
+            for (int j = 0; j < m; ++j, ++i) {
+                const double * C = corr + 4 * j;
+                const double ee = C[3] + 1e-300;
+                const double * Mi = m_shMi;
+                double * w = &co[3 * (size_t)i];
+                w[0] = Mi[0] * C[0] + Mi[1] * C[1] + Mi[2] * C[2];
+                w[1] = Mi[3] * C[0] + Mi[4] * C[1] + Mi[5] * C[2];
+                w[2] = Mi[6] * C[0] + Mi[7] * C[1] + Mi[8] * C[2];
+                const double en = C[0] * w[0] + C[1] * w[1] + C[2] * w[2];
+                chi[i] = (en > 0.0 && en >= m_cfg.shapeFitq * ee) ? sqrt(en) * invS : 0.0;
+            }
+        }
+        // Peaks at the threshold, highest first, a shape's length apart; not
+        // at the edge of where the filter was worked out, which is no peak.
+        int np = 0;
+        for (int i = 0; i < n; ++i) {
+            const double x = chi[i];
+            if (x < thr) continue;
+            if (i > 0 && !(x > chi[i - 1] && chi[i - 1] >= 0.0)) continue;
+            if (i + 1 < n && !(x >= chi[i + 1] && chi[i + 1] >= 0.0)) continue;
+            pk[np++] = i;
+        }
+        if (np == 0) break;
+        std::sort(pk, pk + np, [chi](int x, int y) { return chi[x] > chi[y]; });
+        int na = 0;
+        for (int p = 0; p < np; ++p) {
+            bool near = false;
+            for (int r = 0; r < na; ++r)
+                if (pk[p] - pk[r] < L && pk[r] - pk[p] < L) { near = true; break; }
+            if (!near) pk[na++] = pk[p];
+        }
+        int taken = 0;
+        for (int r = 0; r < na; ++r) {
+            const int i = pk[r];
+            const int t = t0 + i;
+            const double * w = &co[3 * (size_t)i];
+            if (m_cfg.shapePeak > 0.0 || m_cfg.shapeHigh > 0.0) {
+                double fp = 0.0, xp = 0.0;
+                for (int u = 0; u < L; ++u) {
+                    const double v = w[0] * Q[u] + w[1] * Q[(size_t)L + u] + w[2] * Q[2 * (size_t)L + u];
+                    if (fabs(v) > fp) fp = fabs(v);
+                }
+                const int c = t + k;
+                const int x0 = (c - h5 > 0) ? c - h5 : 0;
+                const int x1 = (c + h5 < m_fill) ? c + h5 : m_fill - 1;
+                for (int u = x0; u <= x1; ++u)
+                    if (fabs(m_win[(size_t)u]) > xp) xp = fabs(m_win[(size_t)u]);
+                bool keep = m_cfg.shapePeak > 0.0 && fp >= m_cfg.shapePeak * xp;
+                if (!keep && m_cfg.shapeHigh > 0.0) {
+                    // The input's 3-8 kHz power over +-5 ms, less the click's
+                    // own span and the band filter's ring either side of it.
+                    const int lo0 = (c - h5 > a) ? c - h5 : a, lo1 = c - k - hx;
+                    const int hi0 = c + k + hx + 1, hi1 = (c + h5 + 1 < b) ? c + h5 + 1 : b;
+                    double pw = 0.0;
+                    int np = 0;
+                    if (lo1 > lo0) { pw += S[lo1 - a] - S[lo0 - a]; np += lo1 - lo0; }
+                    if (hi1 > hi0) { pw += S[hi1 - a] - S[hi0 - a]; np += hi1 - hi0; }
+                    keep = np > 0 && fp * fp * (double)np >= m_cfg.shapeHigh * m_cfg.shapeHigh * pw;
+                }
+                if (!keep) continue;
+            }
+            ++taken;
+            double * e = &m_fwd[(size_t)t];
+            for (int j = 0; j < Lg; ++j)
+                e[j] -= w[0] * G[j] + w[1] * G[(size_t)Lg + j] + w[2] * G[2 * (size_t)Lg + j];
+            for (int u = 0; u < L; ++u) {
+                const double v = w[0] * Q[u] + w[1] * Q[(size_t)L + u] + w[2] * Q[2 * (size_t)L + u];
+                m_win[(size_t)(t + u)] -= v;
+                m_full[(size_t)(t + u)] -= v;
+                m_in[(size_t)(t + u)] -= v;
+            }
+        }
+        fits += taken;
+        if (taken == 0) break;
+    }
+    m_shFits += (uint64_t)fits;
+    return fits;
 }
 
 void Channel::rerepairRuns() {
@@ -3196,8 +3796,8 @@ void Channel::flankSpan(int s, int e, double gain, double strength) {
         return;
     }
     // The same limit as repairRun()'s, from the input either side.
-    const double localMax = dmax(absMax(&m_dry[(size_t)(s - ctx)], ctx),
-                                 absMax(&m_dry[(size_t)(e + 1)], ctx));
+    const double localMax = dmax(absMax(&m_in[(size_t)(s - ctx)], ctx),
+                                 absMax(&m_in[(size_t)(e + 1)], ctx));
     const double limit = 1.5 * dmax(localMax, 1e-9);
     // Each estimate becomes the correction to its sample, in place.
     double * d = &m_rhs[0];
@@ -3206,7 +3806,7 @@ void Channel::flankSpan(int s, int e, double gain, double strength) {
         if (v > limit) v = limit;
         else if (v < -limit) v = -limit;
         const int t = s + j;
-        const double x = m_dry[(size_t)t];
+        const double x = m_in[(size_t)t];
         d[j] = strength * ((x - gain * (x - v)) - m_win[(size_t)t]);
     }
     // High-passed into acc[i], window index i from -kBlock: never below it,
@@ -3289,6 +3889,9 @@ void Channel::processBlock() {
         // music better, which is the whole point of running more than one.
         fitModel(0, fitTo);
         if (pass > 0 && m_cfg.rerepair > 0) rerepairRuns();
+        // The shape fit takes the clicks it can fit first, and the model is
+        // refitted on what it leaves. See Config::shape.
+        if (pass == 0 && m_cfg.shape && shapeFit(fitTo) > 0) fitModel(0, fitTo);
         // The margin below the block only feeds the noise estimate, which
         // pass 0 alone refreshes; interpolate() never reads below m_pad.
         detect(pass == 0 ? dFrom : from, dTo, pass);
@@ -3310,6 +3913,8 @@ void Channel::pushOne(double v) {
     if (!finite(v)) v = 0.0;
     m_win[(size_t)m_fill] = v;
     m_dry[(size_t)m_fill] = v;
+    m_in[(size_t)m_fill] = v;
+    if (m_cfg.shape) shapeBand(v);
     m_full[(size_t)m_fill] = v;
     m_flag[(size_t)m_fill] = 0;
     m_strong[(size_t)m_fill] = 0;
@@ -3384,6 +3989,8 @@ void Channel::pushOne(double v) {
     const size_t keep = (size_t)(m_fill - blk);
     memmove(&m_win[0], &m_win[(size_t)blk], sizeof(double) * keep);
     memmove(&m_dry[0], &m_dry[(size_t)blk], sizeof(double) * keep);
+    memmove(&m_in[0], &m_in[(size_t)blk], sizeof(double) * keep);
+    if (m_cfg.shape) memmove(&m_shBand[0], &m_shBand[(size_t)blk], sizeof(double) * keep);
     memmove(&m_full[0], &m_full[(size_t)blk], sizeof(double) * keep);
     memmove(&m_flag[0], &m_flag[(size_t)blk], sizeof(uint8_t) * keep);
     memmove(&m_strong[0], &m_strong[(size_t)blk], sizeof(uint8_t) * keep);

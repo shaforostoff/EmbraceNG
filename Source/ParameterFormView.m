@@ -60,6 +60,14 @@ static const CGFloat sGap         = 8;
 {
     NSArray<AUParameter *> *parameters = [[audioUnit parameterTree] allParameters];
 
+    if ([audioUnit respondsToSelector:@selector(embrace_isParameterHiddenAtAddress:)]) {
+        id<ParameterDescribing> describing = (id<ParameterDescribing>)audioUnit;
+
+        parameters = [parameters filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(AUParameter *parameter, NSDictionary *bindings) {
+            return ![describing embrace_isParameterHiddenAtAddress:[parameter address]];
+        }]];
+    }
+
     NSInteger count  = [parameters count];
     CGFloat   width  = sMargin + sLabelWidth + sGap + sSliderWidth + sGap + sValueWidth + sMargin;
     CGFloat   height = (sMargin * 2) + (count * sRowHeight) + (MAX(count - 1, 0) * sRowGap);
@@ -181,6 +189,14 @@ static const CGFloat sGap         = 8;
 
 - (NSString *) _stringForParameter:(AUParameter *)parameter
 {
+    // -stringFromValue: does not consult valueStrings on a unit's own tree
+    NSArray<NSString *> *names = [parameter valueStrings];
+
+    if ([names count]) {
+        long index = lrintf([parameter value] - [parameter minValue]);
+        if (index >= 0 && index < (long)[names count]) return [names objectAtIndex:index];
+    }
+
     NSString *string = [parameter stringFromValue:NULL];
     NSString *suffix = nil;
 
@@ -267,10 +283,19 @@ static const CGFloat sGap         = 8;
     // Accepts what the field displays, unit suffix and all
     AUValue value = [parameter value];
 
+    // A parameter with named values shows the name, so take a name back first:
+    // a field that says "64" over an index is asking for "64", not index 64
+    NSString *typed = [[sender stringValue] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    NSUInteger named = [[parameter valueStrings] indexOfObjectPassingTest:^BOOL(NSString *name, NSUInteger index, BOOL *stop) {
+        return [name caseInsensitiveCompare:typed] == NSOrderedSame;
+    }];
+
     NSScanner *scanner = [NSScanner scannerWithString:[sender stringValue]];
     double scanned = 0;
 
-    if ([scanner scanDouble:&scanned]) {
+    if (named != NSNotFound) {
+        value = [parameter minValue] + (AUValue)named;
+    } else if ([scanner scanDouble:&scanned]) {
         value = (AUValue)scanned;
     }
 

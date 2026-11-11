@@ -27,7 +27,7 @@ extern const OSType EmbraceDeclickSubType          = 'dclk';
 extern const OSType EmbraceDehumSubType            = 'dhum';
 
 static const int sMaxChannels   = 2;
-static const int sMaxParameters = 8;
+static const int sMaxParameters = 10;
 
 
 // Bypass runs the DSP with a wet mix of zero rather than skipping it, which is
@@ -208,6 +208,13 @@ struct RestorationState {
 }
 
 
+// Subclasses hide parameters that are kept only so that old saved state loads
+- (BOOL) embrace_isParameterHiddenAtAddress:(AUParameterAddress)address
+{
+    return NO;
+}
+
+
 #pragma mark - Subclass Hooks
 
 - (void) createDSP { }
@@ -221,6 +228,54 @@ struct RestorationState {
 
 
 #pragma mark - Declick
+
+// Upstream (1.1.3) exposes only Sensitivity, Model Order as one of 64, 128 or
+// 256, Extra Cautious and delta.  Extent, Max Repair, Repair Depth, Passes and
+// Dry/Wet are retired, but they stay in the parameter tree, hidden: AUAudioUnit's
+// state archive names each parameter by identifier, and -setFullState: throws on
+// one the tree does not have, so dropping them would make every set list and
+// .aupreset saved before now fail to load.  Their values are ignored.
+//
+// The old Model Order ("order", 8 to 256 taps) is one of them.  Its replacement
+// ("modelOrder") is an index into the three, and only that is read.  A state
+// saved before it existed carries "order" alone, and -setFullState: turns that
+// into the nearest of the three.
+//
+// New parameters take new addresses, so nothing saved means something else now.
+//
+enum {
+    kDeclickSensitivity = 0,
+    kDeclickExtent      = 1,   // retired
+    kDeclickMaxLength   = 2,   // retired
+    kDeclickDepth       = 3,   // retired
+    kDeclickPasses      = 4,   // retired
+    kDeclickOrder       = 5,   // retired; old states migrate to kDeclickModelOrder
+    kDeclickDryWet      = 6,   // retired
+    kDeclickDelta       = 7,
+    kDeclickModelOrder  = 8,
+    kDeclickCautious    = 9
+};
+
+static const int sDeclickOrders[] = { 64, 128, 256 };
+
+static int sDeclickOrderForIndex(float index)
+{
+    long i = lrintf(index);
+    if (i < 0) i = 0;
+    if (i > 2) i = 2;
+    return sDeclickOrders[i];
+}
+
+static float sDeclickIndexForOrder(float order)
+{
+    int snapped = declick::Params::snapOrder((int)lrintf(order));
+    return (snapped == 64) ? 0 : (snapped == 128) ? 1 : 2;
+}
+
+// Outside every parameter's range: what -setFullState: parks the two order
+// parameters on to see which of them the state sets
+static const AUValue sDeclickUnset = -1;
+
 
 struct DeclickDSP {
     declick::Channel channel[sMaxChannels];
@@ -272,19 +327,25 @@ struct DeclickDSP {
         lookaheadCapacity = 0;
     }
 
+    // Only what upstream lets a user reach: Sensitivity, Model Order, Extra
+    // Cautious and delta.  Every stage after the AR repair was tuned with the
+    // rest at their defaults, so restrictToControls() puts them back there --
+    // whatever a preset saved before they were retired says, and Dry/Wet
+    // included.  Bypass is still a wet mix of zero, applied after it.
     declick::Params paramsFrom(const RestorationState *state) const
     {
         declick::Params p = declick::Params::defaults();
 
-        p.sensitivity = state->get(0);
-        p.extent      = state->get(1);
-        p.maxLengthMs = state->get(2);
-        p.depth       = state->get(3);
-        p.passes      = (int)lrintf(state->get(4));
-        p.order       = (int)lrintf(state->get(5));
-        p.dryWet      = state->isBypassed() ? 0.0f : state->get(6);
-        p.delta       = !state->isBypassed() && state->get(7) >= 0.5f;
-        p.sanitize();
+        // Unset only for the length of a -setFullState:, which must not cost a
+        // reconfigure on its own account
+        float orderIndex = state->get(kDeclickModelOrder);
+
+        p.sensitivity = state->get(kDeclickSensitivity);
+        p.order       = (orderIndex >= 0) ? sDeclickOrderForIndex(orderIndex) : (haveActive ? active.order : p.order);
+        p.cautious    = state->get(kDeclickCautious) >= 0.5f;
+        p.delta       = !state->isBypassed() && state->get(kDeclickDelta) >= 0.5f;
+        p.restrictToControls();
+        p.dryWet      = state->isBypassed() ? 0.0f : 1.0f;
 
         return p;
     }
@@ -312,7 +373,8 @@ struct DeclickDSP {
             }
         }
 
-        // Only Max Repair and Model Order reach here.  Past the first call it
+        // Only Model Order and Extra Cautious reach here (the latter switches
+        // stages on and off, which changes the latency).  Past the first call it
         // allocates nothing -- see the buffer envelope in declick::Config -- but
         // configure() empties the pipeline, and the next render then has to read
         // the model's lookahead back in before it can emit, so moving those two
@@ -518,55 +580,105 @@ static bool sScoutWarm(NSURL *fileURL, DeclickDSP *dsp, const declick::Params &p
 {
     declick::Params defaults = declick::Params::defaults();
 
+    NSArray<NSString *> *orderNames = @[ @"64", @"128", @"256" ];
+
+    // Tree order is form order for the visible ones.  The retired ones keep
+    // their identifiers, addresses, ranges and relative order.
     return @[
-        EmbraceAUMakeParameter(@"sensitivity", NSLocalizedString(@"Sensitivity",  nil), 0, 0,   1,  defaults.sensitivity, kAudioUnitParameterUnit_Generic),
-        EmbraceAUMakeParameter(@"extent",      NSLocalizedString(@"Extent",       nil), 1, 0,   1,  defaults.extent,      kAudioUnitParameterUnit_Generic),
-        EmbraceAUMakeParameter(@"maxLength",   NSLocalizedString(@"Max Repair",   nil), 2, 0.2, 20, defaults.maxLengthMs, kAudioUnitParameterUnit_Milliseconds),
-        EmbraceAUMakeParameter(@"depth",       NSLocalizedString(@"Repair Depth", nil), 3, 0,   1,  defaults.depth,       kAudioUnitParameterUnit_Generic),
-        EmbraceAUMakeParameter(@"passes",      NSLocalizedString(@"Passes",       nil), 4, 1,   3,  defaults.passes,      kAudioUnitParameterUnit_Indexed),
-        EmbraceAUMakeParameter(@"order",       NSLocalizedString(@"Model Order",  nil), 5, declick::kMinOrder, declick::kMaxOrder, defaults.order, kAudioUnitParameterUnit_Indexed),
-        EmbraceAUMakeParameter(@"dryWet",      NSLocalizedString(@"Dry/Wet",      nil), 6, 0,   1,  defaults.dryWet,      kAudioUnitParameterUnit_Generic),
-        EmbraceAUMakeParameter(@"delta",       NSLocalizedString(@"Delta",        nil), 7, 0,   1,  defaults.delta,       kAudioUnitParameterUnit_Boolean)
+        EmbraceAUMakeParameter(@"sensitivity", NSLocalizedString(@"Sensitivity",    nil), kDeclickSensitivity, 0, 1, defaults.sensitivity, kAudioUnitParameterUnit_Generic),
+        EmbraceAUMakeParameter(@"modelOrder",  NSLocalizedString(@"Model Order",    nil), kDeclickModelOrder,  0, 2, sDeclickIndexForOrder(defaults.order), kAudioUnitParameterUnit_Indexed, orderNames),
+        EmbraceAUMakeParameter(@"cautious",    NSLocalizedString(@"Extra Cautious", nil), kDeclickCautious,    0, 1, defaults.cautious,    kAudioUnitParameterUnit_Boolean),
+
+        EmbraceAUMakeParameter(@"extent",      @"Extent",       kDeclickExtent,    0,   1,  defaults.extent,      kAudioUnitParameterUnit_Generic),
+        EmbraceAUMakeParameter(@"maxLength",   @"Max Repair",   kDeclickMaxLength, 0.2, 20, defaults.maxLengthMs, kAudioUnitParameterUnit_Milliseconds),
+        EmbraceAUMakeParameter(@"depth",       @"Repair Depth", kDeclickDepth,     0,   1,  defaults.depth,       kAudioUnitParameterUnit_Generic),
+        EmbraceAUMakeParameter(@"passes",      @"Passes",       kDeclickPasses,    1,   3,  defaults.passes,      kAudioUnitParameterUnit_Indexed),
+        EmbraceAUMakeParameter(@"order",       @"Model Order (taps)", kDeclickOrder, declick::kMinOrder, declick::kMaxOrder, defaults.order, kAudioUnitParameterUnit_Indexed),
+        EmbraceAUMakeParameter(@"dryWet",      @"Dry/Wet",      kDeclickDryWet,    0,   1,  defaults.dryWet,      kAudioUnitParameterUnit_Generic),
+
+        EmbraceAUMakeParameter(@"delta",       NSLocalizedString(@"Delta",          nil), kDeclickDelta,       0, 1, defaults.delta,       kAudioUnitParameterUnit_Boolean)
     ];
 }
 
 
-// Condensed from the rationale in declick_core.h, which has the measurements.
+- (BOOL) embrace_isParameterHiddenAtAddress:(AUParameterAddress)address
+{
+    switch (address) {
+    case kDeclickExtent:
+    case kDeclickMaxLength:
+    case kDeclickDepth:
+    case kDeclickPasses:
+    case kDeclickOrder:
+    case kDeclickDryWet:
+        return YES;
+    default:
+        return NO;
+    }
+}
+
+
+// A state saved before Model Order became one of three sets "order" and not
+// "modelOrder".  Park both on a value no state holds, load, and see which came
+// in.  Through AUParameter rather than the raw state, because -fullState saves
+// each AUParameter's cached value: a value stored behind its back would be
+// heard but not saved.
+//
+- (void) setFullState:(NSDictionary<NSString *, id> *)fullState
+{
+    AUParameterTree *tree       = [self parameterTree];
+    AUParameter     *modelOrder = [tree parameterWithAddress:kDeclickModelOrder];
+    AUParameter     *order      = [tree parameterWithAddress:kDeclickOrder];
+
+    AUValue modelOrderBefore = [modelOrder value];
+    AUValue orderBefore      = [order value];
+
+    [modelOrder setValue:sDeclickUnset originator:NULL];
+    [order      setValue:sDeclickUnset originator:NULL];
+
+    [super setFullState:fullState];
+
+    if ([modelOrder value] == sDeclickUnset) {
+        AUValue migrated = ([order value] != sDeclickUnset) ? sDeclickIndexForOrder([order value]) : modelOrderBefore;
+        [modelOrder setValue:migrated originator:NULL];
+    }
+
+    if ([order value] == sDeclickUnset) {
+        [order setValue:orderBefore originator:NULL];
+    }
+}
+
+
+// Condensed from the rationale in declick_core.h and upstream's own tooltips.
+// Indexed by address.
 - (NSArray<NSString *> *) createParameterHelp
 {
-    return @[
-        NSLocalizedString(@"How readily a sample is called a click. The default puts the trigger at "
-            "2.85 sigma above the local noise estimate. A detection that only just crosses it is "
-            "repaired in part, not in full, which is what lets 0.9 reach the small clicks that 0.8 "
-            "did and take less from clean records. Higher catches more, at the cost of flagging "
-            "music as damage.", nil),
+    NSMutableArray<NSString *> *help = [NSMutableArray array];
+    for (int i = 0; i < sMaxParameters; i++) [help addObject:@""];
 
-        NSLocalizedString(@"How far each detection spreads outwards into the tail of the click. "
-            "Higher repairs more of the decay; too high starts replacing good audio either side of it.", nil),
+    help[kDeclickSensitivity] = NSLocalizedString(@"How readily a sample is called a click. The "
+        "default, 0.9, puts the trigger at 2.85 sigma above the local noise estimate. Detections "
+        "near the trigger are only partly repaired - they are as likely noise or music as clicks - "
+        "and full repair is kept for clear ones. Past the default, music starts being flagged as "
+        "damage faster than crackle is found. On clean records 0.7-0.8 takes less still.", nil);
 
-        NSLocalizedString(@"The longest single stretch that may be reconstructed. Damage longer than "
-            "this is left alone rather than guessed at.", nil),
+    help[kDeclickModelOrder] = NSLocalizedString(@"Taps in the autoregressive model that predicts "
+        "what the waveform should have been. 128 is the balance. 256 models the music better and "
+        "changes clean records least, but misses more of the short clicks on heavily crackled "
+        "transfers. 64 costs about 0.6x the CPU of 128 and gives up surprisingly little - the one "
+        "to pick on a slow machine; 256 costs about 2.4x.", nil);
 
-        NSLocalizedString(@"How much of the estimated click is subtracted. 1 replaces the damaged "
-            "samples outright. 0 subtracts the 45% fraction that adds the least whole-file error, but "
-            "that caps every repair at -5.2 dB however good the estimate is.", nil),
+    help[kDeclickCautious] = NSLocalizedString(@"Repairs only the clicks the detector flags, and "
+        "turns off every stage that works on the audio around them: the click-shape fit, the "
+        "crackle body, top-band and mid stages, the flank repair and the crackle floor. Those take "
+        "the carpet of crackle under the clicks, and on some records a little of the music with "
+        "it. With this on the music is left as it is, and more crackle stays. Uses less CPU.", nil);
 
-        NSLocalizedString(@"How many times the detector sweeps each block. A second pass catches "
-            "clicks that the first pass's repairs uncover.", nil),
+    help[kDeclickDelta] = NSLocalizedString(@"Outputs what the repair takes out - the input minus "
+        "the output - instead of the repaired audio. For testing: it should be crackle and clicks "
+        "and nothing else, and any music heard in it is being damaged. Saved with the preset; "
+        "untick it when done.", nil);
 
-        NSLocalizedString(@"Taps in the autoregressive model that predicts what the waveform should "
-            "have been. The lever that pays most: against injected-click ground truth, 128 takes "
-            "whole-file error from +0.60 to +1.31 dB and 256 to +2.55 dB. It also costs real CPU and "
-            "adds latency: 128 is about 1.9x the CPU of 64, which gives up surprisingly little where "
-            "that is too much.", nil),
-
-        NSLocalizedString(@"Blend of the repaired signal against the original. 0 passes the input "
-            "through untouched.", nil),
-
-        NSLocalizedString(@"Outputs what the repair takes out - the input minus the output - instead "
-            "of the repaired audio. For testing: it should be crackle and clicks and nothing else, and "
-            "any music heard in it is being damaged. Saved with the preset; untick it when done.", nil)
-    ];
+    return help;
 }
 
 
@@ -738,7 +850,7 @@ struct DehumDSP {
         p.harmonics   = (int)lrintf(state->get(3));
         p.frequency   = state->get(4);
         p.rumbleHz    = state->get(5);
-        p.dryWet      = state->isBypassed() ? 0.0f : state->get(6);
+        p.dryWet      = state->isBypassed() ? 0.0f : 1.0f;   // address 6 is retired
         p.delta       = !state->isBypassed() && state->get(7) >= 0.5f;
         p.sanitize();
 
@@ -952,6 +1064,13 @@ static int sScoutHumLines(NSURL *fileURL, float sensitivity, float searchTo,
 
     // Frequency and Rumble both take zero as an off position rather than as a
     // frequency: 0 Hz means detect automatically, and no high-pass at all.
+    //
+    // Dry/Wet is retired, as upstream (1.1.2) has dropped it: a blend only gives
+    // the hum back at the blend's level, so the one useful setting was 0, which
+    // Bypass already is.  It stays in the tree, hidden, for the reason declick's
+    // retired parameters do: -setFullState: throws on an identifier the tree
+    // lacks, so old set lists and presets would no longer load.  Its value is
+    // ignored.
     return @[
         EmbraceAUMakeParameter(@"sensitivity", NSLocalizedString(@"Sensitivity", nil), 0, 0,   1,   defaults.sensitivity, kAudioUnitParameterUnit_Generic),
         EmbraceAUMakeParameter(@"bandwidth",   NSLocalizedString(@"Bandwidth",   nil), 1, 0.1, 5,   defaults.bandwidth,   kAudioUnitParameterUnit_Hertz),
@@ -959,7 +1078,7 @@ static int sScoutHumLines(NSURL *fileURL, float sensitivity, float searchTo,
         EmbraceAUMakeParameter(@"harmonics",   NSLocalizedString(@"Harmonics",   nil), 3, 1,   dehum::kMaxHarmonics, defaults.harmonics, kAudioUnitParameterUnit_Indexed),
         EmbraceAUMakeParameter(@"frequency",   NSLocalizedString(@"Frequency",   nil), 4, 0,   500, defaults.frequency,   kAudioUnitParameterUnit_Hertz),
         EmbraceAUMakeParameter(@"rumble",      NSLocalizedString(@"Rumble",      nil), 5, 0,   200, defaults.rumbleHz,    kAudioUnitParameterUnit_Hertz),
-        EmbraceAUMakeParameter(@"dryWet",      NSLocalizedString(@"Dry/Wet",     nil), 6, 0,   1,   defaults.dryWet,      kAudioUnitParameterUnit_Generic),
+        EmbraceAUMakeParameter(@"dryWet",      @"Dry/Wet", 6, 0,   1,   defaults.dryWet,      kAudioUnitParameterUnit_Generic),
         EmbraceAUMakeParameter(@"delta",       NSLocalizedString(@"Delta",       nil), 7, 0,   1,   defaults.delta,       kAudioUnitParameterUnit_Boolean)
     ];
 }
@@ -994,14 +1113,19 @@ static int sScoutHumLines(NSURL *fileURL, float sensitivity, float searchTo,
             "happens to share the band with hum. 0 turns it off. Higher removes more rumble, and more "
             "of the bass along with it.", nil),
 
-        NSLocalizedString(@"Blend of the processed signal against the original. 0 passes the input "
-            "through untouched.", nil),
+        @"",   // Dry/Wet, retired and hidden
 
         NSLocalizedString(@"Outputs what the notches take out - the input minus the output - instead "
             "of the cleaned audio. For testing: it should be hum and nothing else. Rumble is left out "
             "of it, because what a high-pass removes carries the whole spectrum as phase shift and "
             "sounds like the music. Saved with the preset; untick it when done.", nil)
     ];
+}
+
+
+- (BOOL) embrace_isParameterHiddenAtAddress:(AUParameterAddress)address
+{
+    return address == 6;   // Dry/Wet, retired
 }
 
 

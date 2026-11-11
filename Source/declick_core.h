@@ -42,7 +42,8 @@ enum {
     //! the top of the range - see the README for the throughput figures.
     kMaxOrder = 256,
     kBlock    = 512,     //!< analysis hop; also sets most of the latency
-    kCarpetMax = 64      //!< seconds the carpet key can look back; see Config::carpet
+    kCarpetMax = 64,     //!< seconds the carpet key can look back; see Config::carpet
+    kShapeMax = 128      //!< the shape fit's longest half length; see Config::shape
 };
 
 //! User-facing controls, all normalised 0..1 except where noted.
@@ -58,6 +59,16 @@ struct Params {
     //! repaired audio. For listening to what is being removed: it should be
     //! crackle and nothing else, and any music heard in it is collateral.
     bool  delta;
+    //! Extra cautious: the AR detect-and-interpolate repair and nothing else.
+    //! Every stage after it - the shape fit, the body, fine, micro and mid
+    //! stages, the flank repair and the crackle floor - takes something from
+    //! the spectrum or the waveform beside the flagged samples, and on some
+    //! records some of that is music. This turns all of them off (and the
+    //! carpet and Poisson keys, which only gate them), so what is removed is
+    //! the clicks the detector flags and the music is left as it is. More
+    //! crackle stays: the carpet under the clicks, and the bodies and ringing
+    //! of the clicks that are repaired. Config::compute() applies it.
+    bool  cautious;
 
     static Params defaults() {
         Params p;
@@ -89,14 +100,38 @@ struct Params {
         p.order       = 128;
         p.dryWet      = 1.0f;
         p.delta       = false;
+        p.cautious    = false;
         return p;
     }
-    //! The plug-in formats' seven sliders, each 0..1 and pinned there, in the
-    //! order Sensitivity, Extent, Max repair, Repair depth, Passes, Model
-    //! order, Dry/Wet. Max repair is 0.2 .. 20 ms; the quantised ones use
-    //! equal-width buckets, so Passes at 0.5 lands on the 2 the tuning was
-    //! done at, and Model order (16 .. 256 in eights) at 0.4677 on 128.
-    static Params fromSliders(const float s[7]);
+    //! What a user can reach. Every stage added after the AR repair - body,
+    //! flank, carpet key, crackle floor, micro and mid, the shape fit - was
+    //! tuned by ear with that repair at its defaults, so moving Extent, Max
+    //! repair, Repair depth or Passes moves the ground all of them stand on,
+    //! into combinations nobody has heard. The plug-ins therefore expose only
+    //! Sensitivity, Model order (64, 128 or 256), Extra cautious and, where
+    //! there is a place for it, delta. This puts every other field back to its
+    //! default - Dry/Wet included, at 1: a declicker blended with its input
+    //! gives the clicks back only 6 dB down at half wet, so there was no
+    //! setting between bypass and full worth having - and Model order on the
+    //! nearest of the three. The CLI and the tests set
+    //! Params directly and are not held to it.
+    void restrictToControls();
+    //! 64, 128 or 256, whichever is nearest; a tie goes up.
+    static int snapOrder(int order);
+
+    enum { kSliderCount = 2 };
+    //! The plug-in formats' two sliders, each 0..1 and pinned there, in the
+    //! order Sensitivity, Model order, and the Extra cautious switch;
+    //! everything else is default.
+    //! Model order reads its slider the way the old 16 .. 256-in-eights one
+    //! did and snaps that to 64, 128 or 256, so a position saved by an older
+    //! build lands on the nearest of the three: 0 on 64, 0.4677 (the old
+    //! default) and 0.5 on 128, 1 on 256.
+    static Params fromSliders(const float s[kSliderCount], bool cautious = false);
+    //! A Model order slider position that reads as snapOrder(order) both here
+    //! and on the old 16 .. 256 slider: 0.2097, 0.4677 or 1. For writing a
+    //! preset an older build can open as it sounds here.
+    static float orderSlider(int order);
     void sanitize();
     bool operator==(const Params & o) const;
     bool operator!=(const Params & o) const { return !(*this == o); }
@@ -165,6 +200,39 @@ struct Config {
     double softMin      = 0.5;
     double softSpan     = 3.5;
 
+    //! The shape fit. Not user-facing; declick_cli sweeps it as --shape,
+    //! --shape-chi, --shape-gate, --shape-ms, --shape-fitq and --shape-peak.
+    //! A shellac click is a doublet a fraction of a millisecond long, and over
+    //! a run of 13-20 samples the AR interpolation gets its second lobe wrong
+    //! and leaves a quarter to three quarters of it. So before the first pass
+    //! looks for runs, each block's strongest clicks are fitted as a sum of
+    //! three fixed shapes, +-shapeMs: a 1-8 kHz band-limited impulse, its
+    //! derivative, and a shellac click measured against a vinyl copy (down,
+    //! up, and a slow tail that carries its 0.5-2 kHz). Only the fitted shapes are
+    //! subtracted, and the music under them stays. A click is a peak of the
+    //! matched filter on the model's residual, shapeChi sigma or more (as a
+    //! two-shape test; the three-shape threshold has the same false alarm
+    //! rate), where the input's 3-8 kHz power over 1 ms stands shapeGate times
+    //! over its median across +-15 ms, and the shapes explain shapeFitq or
+    //! more of the residual's energy over their own span (0: no such test).
+    //! And a fit is taken only where it stands out of the music around it,
+    //! over +-5 ms: its peak is shapePeak or more of the input's peak, or
+    //! shapeHigh or more of the input's 3-8 kHz RMS (the click's own span left
+    //! out). A loud attack the shapes half fit does neither; a click under
+    //! loud, dark music does the second. Without that guard it shaves loud
+    //! transients on clean records. See the README, "Clicks the interpolation
+    //! gets wrong".
+    int    shape        = 1;
+    double shapeChi     = 3.0;
+    double shapeGate    = 3.5;
+    double shapeMs      = 0.75;
+    double shapeFitq    = 0.0;
+    double shapePeak    = 0.4;
+    double shapeHigh    = 4.0;
+    //! How far either side of an open gate the matched filter is worked out:
+    //! the gate's band filter is causal and opens a little after the click.
+    double shapeSlackMs = 0.25;
+
     //! The body stage. Not user-facing; declick_cli sweeps it as --body,
     //! --body-floor, --body-peak, --body-rate0 and --body-rate1.
     //! Each crackle on a shellac transfer is a sharp core, which the detector
@@ -183,12 +251,14 @@ struct Config {
     //! fire come and go. The cut ramps in from bodyRate0 to bodyRate1, and
     //! once open it is held for bodyRelease seconds. Where the key never opens
     //! the stage subtracts nothing, and the output is the repaired audio to
-    //! the bit. For the measurements and how the floor and the release were
-    //! chosen, see the README, "The body of dense crackle: the body stage".
+    //! the bit. It starts at 1 kHz: from 500 Hz, on records with a clean copy,
+    //! what it took at 0.5-1 kHz was music. For the measurements and how the
+    //! band, the floor and the release were chosen, see the README, "The body
+    //! of dense crackle: the body stage".
     //! It costs bodyLatency samples of latency, ~70 ms at 44.1 kHz. A host
     //! that reads ahead does not hear that as delay.
     int    body         = 1;
-    double bodyLo       = 500.0;
+    double bodyLo       = 1000.0;
     double bodyHi       = 3000.0;
     double bodyFloor    = 0.25;
     double bodyPeak     = 6.0;
@@ -330,6 +400,10 @@ struct Config {
     //! Samples the repaired audio waits before the body stage, for the flank
     //! repair: a block, or 0 when it is off. Part of the latency.
     int    flankStage   = 0;
+    //! The shape fit's half length in samples, from shapeMs and the rate
+    //! (at most kShapeMax), and its threshold for three shapes.
+    int    shapeK       = 33;
+    double shapeThr     = 3.4;
 
     //! The carpet key. Not user-facing; declick_cli sweeps it as --carpet,
     //! --carpet-peak, --carpet-win, --carpet-q, --carpet-rate0, --carpet-rate1,
@@ -503,7 +577,8 @@ struct Config {
     //! Only `order`, `maxRun`, `madWindow`, `body`, `bodyN`, `fineN`, `fineM`,
     //! `microN`, `microM`, `mid`, `midLo`, `flankStage`, `flankHalf` and the
     //! crackle floor stage's `crackleFloor`, `crackleFloorN`, `crackleFloorLo`,
-    //! `crackleFloorHi` and `crackleFloorHist` size
+    //! `crackleFloorHi` and `crackleFloorHist`, and the shape fit's `shape` and
+    //! `shapeK` (its shapes are built by configure()) size
     //! anything or set the latency (`pad` and `latency` are derived from them);
     //! thresholds, depth, wet, delta, passes and whether the fine and micro
     //! stages run are read per block and can change under a live stream.
@@ -516,7 +591,8 @@ struct Config {
             && flankHalf == o.flankHalf && flankHz == o.flankHz
             && crackleFloor == o.crackleFloor && crackleFloorN == o.crackleFloorN
             && crackleFloorLo == o.crackleFloorLo && crackleFloorHi == o.crackleFloorHi
-            && crackleFloorHist == o.crackleFloorHist && rate == o.rate;
+            && crackleFloorHist == o.crackleFloorHist && rate == o.rate
+            && shape == o.shape && shapeK == o.shapeK;
     }
 };
 
@@ -793,6 +869,9 @@ public:
     uint64_t clampedSamples() const { return m_clamped; }
     uint64_t reclampedSamples() const { return m_reclamped; }
 
+    //! Clicks the shape fit took. See Config::shape.
+    uint64_t shapeFits() const { return m_shFits; }
+
     //! Diagnostics for the flank repair: spans interpolated again, spans
     //! passed over (longer than maxRun, or too near the window's edge), and
     //! the -40 dB edge of the long-term spectrum in Hz with the pad it gives
@@ -875,6 +954,12 @@ private:
     void growOut();               //!< only reachable by overrunning maxBlock
     void processBlock();          //!< repairs m_win[m_pad .. m_pad+kBlock)
     void detect(int from, int to, int pass);
+    //! The shape fit (Config::shape): builds its shapes for the rate, and fits
+    //! and subtracts the clicks centred in this block, from m_win, m_full and
+    //! m_in, before the first pass. Returns how many it took.
+    void shapeBuild();
+    int  shapeFit(int to);
+    void shapeBand(double v);
     //! The median of the noise ring's first `have` entries; see the .cpp.
     double ringMedian(size_t have);
     //! Repairs bursts that start in [from, to); a burst may run on to `reach`.
@@ -917,6 +1002,22 @@ private:
     //! Parallel to m_win: in a run repaired at Config::midPeak sigma or more.
     std::vector<uint8_t> m_strong;
     AlignedBuf m_dry;             //!< untouched copy, for the dry/wet mix
+    //! m_dry less the clicks the shape fit took: the input the repairs take
+    //! their clicks from. m_dry itself stays the input, for the mix and the
+    //! delta. Equal to m_dry when the shape fit is off.
+    AlignedBuf m_in;
+    //! The shape fit. Parallel to m_win: the input's 3-8 kHz power, from four
+    //! biquads (m_shB coefficients, m_shZ state) as it is pushed. m_shQ: the
+    //! three shapes, 2 shapeK + 1 each; m_shG: them through the model, with
+    //! `order` more each; m_shMi: the inverse of their Gram matrix. The rest
+    //! is per-block scratch.
+    std::vector<double> m_shBand, m_shQ, m_shG, m_shSum, m_shAvg, m_shMed, m_shChi, m_shCo;
+    std::vector<int> m_shPk;
+    double m_shB[20] = {};
+    double m_shZ[8] = {};
+    double m_shMi[9] = {};
+    double m_shSigHint = 0.0;     //!< the last block's residual median; see shapeFit()
+    uint64_t m_shFits = 0;
     //! m_win with every repair in full, whatever its Config::softMin gain:
     //! what repairRun() solves against. Solved against m_win, a run's context
     //! held its neighbours' half clicks. After the first pass the refit has

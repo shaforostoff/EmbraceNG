@@ -4,14 +4,17 @@
 #import <Cocoa/Cocoa.h>
 #import <AudioToolbox/AudioToolbox.h>
 
-// Lets a unit explain and reset its own parameters without ParameterFormView
-// knowing anything about that unit.  Both are optional: a unit that implements
-// neither gets a plain form with no help text and no reset.
+// Lets a unit explain, reset and hide its own parameters without
+// ParameterFormView knowing anything about that unit.  All are optional: a unit
+// that implements none gets a plain form of every parameter with no help text
+// and no reset.  A hidden parameter is one the unit keeps only so that old saved
+// state still loads.
 //
 @protocol ParameterDescribing <NSObject>
 @optional
 - (AUValue) embrace_defaultValueForParameterAddress:(AUParameterAddress)address;
 - (NSString *) embrace_helpTextForParameterAddress:(AUParameterAddress)address;
+- (BOOL) embrace_isParameterHiddenAtAddress:(AUParameterAddress)address;
 @end
 
 
